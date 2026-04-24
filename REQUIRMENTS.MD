@@ -25,3 +25,12 @@ There are the components needed to power up the system.
 | Heat Shrink Tubing | | [AliExpress](https://it.aliexpress.com/item/1005008146302901.html?spm=a2g0o.productlist.main.1.4c671901hhKQAl&algo_pvid=2d3f61e2-cd16-4b95-a463-1d19b76e023a&algo_exp_id=2d3f61e2-cd16-4b95-a463-1d19b76e023a-0&pdp_ext_f=%7B%22order%22%3A%2267658%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21EUR%212.29%212.29%21%21%2117.97%2117.97%21%402103956b17768048242181086ee39a%2112000043985559287%21sea%21IT%212355586785%21X%211%210%21n_tag%3A-29919%3Bd%3A420b8186%3Bm03_new_user%3A-29895&curPageLogUid=KlAD5cSluIWu&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005008146302901%7C_p_origin_prod%3A)  |
 | PC817 | | [AliExpress](https://it.aliexpress.com/item/1005006137001669.html?spm=a2g0o.productlist.main.1.35e8ghGEghGEhp&algo_pvid=8de14512-aafe-41d0-bf78-811d4920b0ec&algo_exp_id=8de14512-aafe-41d0-bf78-811d4920b0ec-0&pdp_ext_f=%7B%22order%22%3A%222040%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21EUR%211.59%211.59%21%21%2112.46%2112.46%21%402103891017768047212164540edda7%2112000035923741481%21sea%21IT%212355586785%21X%211%210%21n_tag%3A-29919%3Bd%3A420b8186%3Bm03_new_user%3A-29895&curPageLogUid=ynEcQlrUi5bu&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005006137001669%7C_p_origin_prod%3A) |
 | Furcate Lug Cripm | | [AliExpress](https://it.aliexpress.com/item/1005003134520182.html?spm=a2g0o.productlist.main.1.39152b9bQ3YpJk&algo_pvid=f6144eed-b18c-4c7b-bd7d-b5b9569ea361&algo_exp_id=f6144eed-b18c-4c7b-bd7d-b5b9569ea361-0&pdp_ext_f=%7B%22order%22%3A%2243%22%2C%22spu_best_type%22%3A%22price%22%2C%22eval%22%3A%221%22%2C%22fromPage%22%3A%22search%22%7D&pdp_npi=6%40dis%21EUR%211.89%211.89%21%21%212.18%212.18%21%402103867617768052502634146ef418%2112000024279364505%21sea%21IT%212355586785%21X%211%210%21n_tag%3A-29919%3Bd%3A420b8186%3Bm03_new_user%3A-29895&curPageLogUid=7GK9GhULrXNq&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005003134520182%7C_p_origin_prod%3A) |
+
+## Requirements for sniffing CAN traffic
+We'll be sniffing it via the OBD2 port. This is the [source](https://www.youtube.com/watch?v=cAAzXM5vsi]
+| Component | Description | Link |
+| --- | --- | --- |
+| Arduino One | Micro-controller |
+| MCP2515 | Can Driver for sniffing | |
+| OBD2 male plug |  |
+| OBD2 Y splitter | | 
