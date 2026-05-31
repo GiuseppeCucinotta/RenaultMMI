@@ -1,0 +1,21 @@
+[
+  {
+    "file": "src/receiver_can.c",
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-std=c11",
+      "-pthread",
+      "-Iinclude",
+      "-MMD",
+      "-MP",
+      "-c",
+      "src/receiver_can.c",
+      "-o",
+      "build/receiver_can.o"
+    ],
+    "directory": "/home/giuseppec/Coding/RenaultMMI/backend",
+    "output": "build/receiver_can.o"
+  }
+]
