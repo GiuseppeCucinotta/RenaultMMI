@@ -19,5 +19,8 @@ void frame_put(raw_frames_buffer *b, struct can_frame frame);
  * */
 struct can_frame frame_get(raw_frames_buffer *b);
 
-/* @brief Allocate the struct with malloc and returns a pointer to it */
+/* @brief Initialize the mutex and condition variables;
+ * Allocate the struct with malloc.
+ * @return Pointer to the struct.
+ */
 raw_frames_buffer *buf_init();
