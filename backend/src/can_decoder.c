@@ -1,10 +1,14 @@
 #include "can_decoder.h"
 #include "grand_modus.h"
+#include "ring_buffer.h"
 
+#include <linux/can.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 // Tracks the current vehicle state
 VehicleState global_vehicle_state;
@@ -163,7 +167,43 @@ void decoder_init(void) {
       GRAND_MODUS_LIGHTS_AND_DOORS_LENGTH;
 }
 
-int process_can_frame(struct can_frame *frame) {
+void print_vehicle_state() {
+  system("clear");
+  printf("-- ENGINE STATE --\n");
+  printf("RPM: %lf\n", global_vehicle_state.engine_rpm);
+
+  printf("-- DOORS STATE --\n");
+  printf("Driver door: %d\n", global_vehicle_state.door_driver);
+  printf("Passenger door: %d\n", global_vehicle_state.door_passenger);
+  printf("Rear left door: %d\n", global_vehicle_state.door_rear_left);
+  printf("Rear right door: %d\n", global_vehicle_state.door_rear_right);
+  printf("Trunk: %d\n", global_vehicle_state.trunk);
+
+  printf("-- LIGHTS STATE --\n");
+  printf("Parking lights: %d\n", global_vehicle_state.parking_lights);
+  printf("Low beam: %d\n", global_vehicle_state.low_beam);
+  printf("High beam: %d\n", global_vehicle_state.high_beam);
+  printf("Left turn signal: %d\n", global_vehicle_state.turn_signal_left);
+  printf("Right turn signal: %d\n", global_vehicle_state.turn_signal_right);
+  printf("Front fog lights: %d\n", global_vehicle_state.front_fog_lights);
+  printf("Rear fog light: %d\n", global_vehicle_state.rear_fog_light);
+
+  printf("-- CLIMATE STATE --\n");
+  printf("Fan active: %d\n", global_vehicle_state.fan_active);
+  printf("Air conditioning: %d\n", global_vehicle_state.air_conditioning);
+  printf("Rear defroster: %d\n", global_vehicle_state.rear_defroster);
+}
+
+/* @brief Calls the corrisponding wrapper decoder function for the
+ * recevied can_frame.
+ * @param[in] The can frame to decode
+ * @return 0 in case of successful decoding
+ * @return -1 if the value is out of range
+ * @return -2 if the decoder function returns EINVAL
+ * @return 1 if there's no corrisponding decoder function linked to a CAN ID
+ * frame
+ * */
+static int process_can_frame(struct can_frame *frame) {
   uint32_t id = frame->can_id;
 
   if (id < CAN_11B_IDS && can_table[id].wrapper != NULL) {
@@ -171,4 +211,21 @@ int process_can_frame(struct can_frame *frame) {
       return can_table[id].wrapper(frame->data, frame->can_dlc);
   }
   return 1;
+}
+
+void *decoder_loop(void *b) {
+  raw_frames_buffer *ring_buffer = (raw_frames_buffer *)b;
+
+  while (1) {
+    struct can_frame frame_to_decode = frame_get(ring_buffer);
+    int return_value = process_can_frame(&frame_to_decode);
+
+    if (return_value == -1)
+      printf("[!] Out of range value!\n");
+    else if (return_value == -2)
+      printf("[!] Invalid value!\n");
+
+    print_vehicle_state();
+  }
+  return NULL;
 }
