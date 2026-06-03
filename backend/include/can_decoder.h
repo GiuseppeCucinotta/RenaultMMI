@@ -48,13 +48,4 @@ extern VehicleState global_vehicle_state;
  * */
 void decoder_init(void);
 
-/* @brief Calls the corrisponding wrapper decoder function for the
- * recevied can_frame.
- * @param[in] The can frame to decode
- * @return 0 in case of successful decoding
- * @return -1 if the value is out of range
- * @return -2 if the decoder function returns EINVAL
- * @return 1 if there's no corrisponding decoder function linked to a CAN ID
- * frame
- * */
-int process_can_frame(struct can_frame *frame);
+void *decoder_loop(void *b);
