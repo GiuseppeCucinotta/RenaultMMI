@@ -11,7 +11,7 @@
 #include <stdlib.h>
 
 // Tracks the current vehicle state
-VehicleState global_vehicle_state;
+VehicleState global_vehicle;
 
 // Prototype of wrapper decoder function pointer
 typedef int (*DecoderWrapper)(const uint8_t *data, size_t dlc);
@@ -35,13 +35,16 @@ static int wrapper_decode_engine(const uint8_t *data, size_t dlc) {
 
   struct grand_modus_engine_t raw_engine_msg;
   if (grand_modus_engine_unpack(&raw_engine_msg, data, dlc) == 0) {
-    double decoded_rpm =
+    uint16_t decoded_rpm =
         grand_modus_engine_engine_rpm_decode(raw_engine_msg.engine_rpm);
+    uint8_t decoded_speed =
+        grand_modus_engine_vehicle_speed_decode(raw_engine_msg.vehicle_speed);
 
     if (grand_modus_engine_engine_rpm_is_in_phys_range(decoded_rpm)) {
-      pthread_mutex_lock(&global_vehicle_state.mutex);
-      global_vehicle_state.engine_rpm = decoded_rpm;
-      pthread_mutex_unlock(&global_vehicle_state.mutex);
+      pthread_mutex_lock(&global_vehicle.mutex);
+      global_vehicle.state.engine_rpm = decoded_rpm;
+      global_vehicle.state.vehicle_speed = decoded_speed;
+      pthread_mutex_unlock(&global_vehicle.mutex);
     } else {
       return -1;
     }
@@ -60,9 +63,9 @@ static int wrapper_decode_engine(const uint8_t *data, size_t dlc) {
 static int wrapper_decode_brakes(const uint8_t *data, size_t dlc) {
   struct grand_modus_brakes_t raw_brakes_msg;
   if (grand_modus_brakes_unpack(&raw_brakes_msg, data, dlc) == 0) {
-    pthread_mutex_lock(&global_vehicle_state.mutex);
-    global_vehicle_state.parking_brake = (bool)raw_brakes_msg.parking_brake;
-    pthread_mutex_unlock(&global_vehicle_state.mutex);
+    pthread_mutex_lock(&global_vehicle.mutex);
+    global_vehicle.state.parking_brake = (bool)raw_brakes_msg.parking_brake;
+    pthread_mutex_unlock(&global_vehicle.mutex);
   } else {
     return -2;
   }
@@ -78,11 +81,11 @@ static int wrapper_decode_brakes(const uint8_t *data, size_t dlc) {
 static int wrapper_decode_gearbox(const uint8_t *data, size_t dlc) {
   struct grand_modus_gearbox_t raw_gearbox_msg;
   if (grand_modus_gearbox_unpack(&raw_gearbox_msg, data, dlc) == 0) {
-    pthread_mutex_lock(&global_vehicle_state.mutex);
+    pthread_mutex_lock(&global_vehicle.mutex);
 
-    global_vehicle_state.reverse_gear = (bool)raw_gearbox_msg.reverse_gear;
+    global_vehicle.state.reverse_gear = (bool)raw_gearbox_msg.reverse_gear;
 
-    pthread_mutex_unlock(&global_vehicle_state.mutex);
+    pthread_mutex_unlock(&global_vehicle.mutex);
   } else {
     return -2;
   }
@@ -98,13 +101,13 @@ static int wrapper_decode_gearbox(const uint8_t *data, size_t dlc) {
 static int wrapper_decode_climate(const uint8_t *data, size_t dlc) {
   struct grand_modus_climate_t raw_climate_msg;
   if (grand_modus_climate_unpack(&raw_climate_msg, data, dlc) == 0) {
-    pthread_mutex_lock(&global_vehicle_state.mutex);
+    pthread_mutex_lock(&global_vehicle.mutex);
 
-    global_vehicle_state.air_conditioning =
+    global_vehicle.state.air_conditioning =
         (bool)raw_climate_msg.air_conditioning;
-    global_vehicle_state.rear_defroster = (bool)raw_climate_msg.rear_defroster;
-    global_vehicle_state.fan_active = (bool)raw_climate_msg.fan_active;
-    pthread_mutex_unlock(&global_vehicle_state.mutex);
+    global_vehicle.state.rear_defroster = (bool)raw_climate_msg.rear_defroster;
+    global_vehicle.state.fan_active = (bool)raw_climate_msg.fan_active;
+    pthread_mutex_unlock(&global_vehicle.mutex);
   } else {
     return -2;
   }
@@ -120,23 +123,25 @@ static int wrapper_decode_climate(const uint8_t *data, size_t dlc) {
 static int wrapper_decode_lights_and_doors(const uint8_t *data, size_t dlc) {
   struct grand_modus_lights_and_doors_t raw_ld_msg;
   if (grand_modus_lights_and_doors_unpack(&raw_ld_msg, data, dlc) == 0) {
-    pthread_mutex_lock(&global_vehicle_state.mutex);
+    pthread_mutex_lock(&global_vehicle.mutex);
 
     // Lights
-    global_vehicle_state.parking_lights = (bool)raw_ld_msg.parking_lights;
-    global_vehicle_state.low_beam = (bool)raw_ld_msg.low_beams;
-    global_vehicle_state.high_beam = (bool)raw_ld_msg.high_beams;
-    global_vehicle_state.front_fog_lights = (bool)raw_ld_msg.front_fog_lights;
-    global_vehicle_state.rear_fog_light = (bool)raw_ld_msg.rear_fog_light;
+    global_vehicle.state.parking_lights = (bool)raw_ld_msg.parking_lights;
+    global_vehicle.state.low_beam = (bool)raw_ld_msg.low_beams;
+    global_vehicle.state.high_beam = (bool)raw_ld_msg.high_beams;
+    global_vehicle.state.front_fog_lights = (bool)raw_ld_msg.front_fog_lights;
+    global_vehicle.state.rear_fog_light = (bool)raw_ld_msg.rear_fog_light;
+    global_vehicle.state.turn_signal_left = (bool)raw_ld_msg.turn_signal_left;
+    global_vehicle.state.turn_signal_right = (bool)raw_ld_msg.turn_signal_right;
 
     // Doors
-    global_vehicle_state.door_driver = (bool)raw_ld_msg.door_driver;
-    global_vehicle_state.door_passenger = (bool)raw_ld_msg.door_passenger;
-    global_vehicle_state.door_rear_left = (bool)raw_ld_msg.door_rear_left;
-    global_vehicle_state.door_rear_right = (bool)raw_ld_msg.door_rear_right;
+    global_vehicle.state.door_driver = (bool)raw_ld_msg.door_driver;
+    global_vehicle.state.door_passenger = (bool)raw_ld_msg.door_passenger;
+    global_vehicle.state.door_rear_left = (bool)raw_ld_msg.door_rear_left;
+    global_vehicle.state.door_rear_right = (bool)raw_ld_msg.door_rear_right;
 
-    global_vehicle_state.trunk = (bool)raw_ld_msg.trunk;
-    pthread_mutex_unlock(&global_vehicle_state.mutex);
+    global_vehicle.state.trunk = (bool)raw_ld_msg.trunk;
+    pthread_mutex_unlock(&global_vehicle.mutex);
   } else {
     return -2;
   }
@@ -154,7 +159,7 @@ void decoder_init(void) {
 
   // Gearbox decoder
   can_table[GRAND_MODUS_GEARBOX_FRAME_ID].wrapper = wrapper_decode_gearbox;
-  can_table[GRAND_MODUS_GEARBOX_LENGTH].dlc = GRAND_MODUS_GEARBOX_LENGTH;
+  can_table[GRAND_MODUS_GEARBOX_FRAME_ID].dlc = GRAND_MODUS_GEARBOX_LENGTH;
 
   // Climate decoder
   can_table[GRAND_MODUS_CLIMATE_FRAME_ID].wrapper = wrapper_decode_climate;
@@ -168,30 +173,34 @@ void decoder_init(void) {
 }
 
 void print_vehicle_state() {
-  system("clear");
+  // byte sequence for deleting everthing
+  printf("\033[H\033[J");
+  pthread_mutex_lock(&global_vehicle.mutex);
   printf("-- ENGINE STATE --\n");
-  printf("RPM: %lf\n", global_vehicle_state.engine_rpm);
+  printf("RPM: %d\n", global_vehicle.state.engine_rpm);
+  printf("Vehicle speed: %d km/h\n", global_vehicle.state.vehicle_speed);
 
   printf("-- DOORS STATE --\n");
-  printf("Driver door: %d\n", global_vehicle_state.door_driver);
-  printf("Passenger door: %d\n", global_vehicle_state.door_passenger);
-  printf("Rear left door: %d\n", global_vehicle_state.door_rear_left);
-  printf("Rear right door: %d\n", global_vehicle_state.door_rear_right);
-  printf("Trunk: %d\n", global_vehicle_state.trunk);
+  printf("Driver door: %d\n", global_vehicle.state.door_driver);
+  printf("Passenger door: %d\n", global_vehicle.state.door_passenger);
+  printf("Rear left door: %d\n", global_vehicle.state.door_rear_left);
+  printf("Rear right door: %d\n", global_vehicle.state.door_rear_right);
+  printf("Trunk: %d\n", global_vehicle.state.trunk);
 
   printf("-- LIGHTS STATE --\n");
-  printf("Parking lights: %d\n", global_vehicle_state.parking_lights);
-  printf("Low beam: %d\n", global_vehicle_state.low_beam);
-  printf("High beam: %d\n", global_vehicle_state.high_beam);
-  printf("Left turn signal: %d\n", global_vehicle_state.turn_signal_left);
-  printf("Right turn signal: %d\n", global_vehicle_state.turn_signal_right);
-  printf("Front fog lights: %d\n", global_vehicle_state.front_fog_lights);
-  printf("Rear fog light: %d\n", global_vehicle_state.rear_fog_light);
+  printf("Parking lights: %d\n", global_vehicle.state.parking_lights);
+  printf("Low beam: %d\n", global_vehicle.state.low_beam);
+  printf("High beam: %d\n", global_vehicle.state.high_beam);
+  printf("Left turn signal: %d\n", global_vehicle.state.turn_signal_left);
+  printf("Right turn signal: %d\n", global_vehicle.state.turn_signal_right);
+  printf("Front fog lights: %d\n", global_vehicle.state.front_fog_lights);
+  printf("Rear fog light: %d\n", global_vehicle.state.rear_fog_light);
 
   printf("-- CLIMATE STATE --\n");
-  printf("Fan active: %d\n", global_vehicle_state.fan_active);
-  printf("Air conditioning: %d\n", global_vehicle_state.air_conditioning);
-  printf("Rear defroster: %d\n", global_vehicle_state.rear_defroster);
+  printf("Fan active: %d\n", global_vehicle.state.fan_active);
+  printf("Air conditioning: %d\n", global_vehicle.state.air_conditioning);
+  printf("Rear defroster: %d\n", global_vehicle.state.rear_defroster);
+  pthread_mutex_unlock(&global_vehicle.mutex);
 }
 
 /* @brief Calls the corrisponding wrapper decoder function for the
@@ -224,8 +233,13 @@ void *decoder_loop(void *b) {
       printf("[!] Out of range value!\n");
     else if (return_value == -2)
       printf("[!] Invalid value!\n");
+    else if (return_value == 1)
+      printf("[!] No corrisponding decoder found for that frame!\n");
 
-    print_vehicle_state();
+    // print only every 25 frames
+    static int print_throttle = 0;
+    if (print_throttle++ % 25 == 0)
+      print_vehicle_state();
   }
   return NULL;
 }
