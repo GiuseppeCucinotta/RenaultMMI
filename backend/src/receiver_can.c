@@ -20,7 +20,7 @@ static int init_can_socket() {
   int fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
 
   if (fd < 0) {
-    perror("Socket not created; error occured.\n");
+    perror("[!] Can't create CAN socket!\n");
     exit(1);
   }
 
@@ -36,7 +36,7 @@ static int init_can_socket() {
   };
 
   if (bind(fd, (struct sockaddr *)&addr_can, sizeof(addr_can)) < 0) {
-    perror("[!] Can't bind the socket.\n");
+    perror("[!] Can't bind CAN socket.\n");
     exit(1);
   }
 
