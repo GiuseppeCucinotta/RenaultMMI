@@ -1,13 +1,17 @@
 #pragma once
+#include <bits/pthreadtypes.h>
 #include <linux/can.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define CAN_11B_IDS 2048
 
+#pragma pack(push, 1)
 typedef struct {
   // Engine data
-  double engine_rpm;
+  uint16_t engine_rpm;
+  uint8_t vehicle_speed;
 
   // Brakes data
   bool parking_brake;
@@ -38,10 +42,15 @@ typedef struct {
 
   // Safety
   bool seatbelt;
+} VehiclePayloadState;
+#pragma pack(pop)
+
+typedef struct {
+  VehiclePayloadState state;
   pthread_mutex_t mutex;
 } VehicleState;
 
-extern VehicleState global_vehicle_state;
+extern VehicleState global_vehicle;
 
 /* @brief Sets the corrisponding CAN IDs frame structs to the corrisponding
  * wrapper decoder functions and expected DLCs.
