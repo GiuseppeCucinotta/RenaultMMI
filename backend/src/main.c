@@ -1,11 +1,11 @@
 #include <bits/pthreadtypes.h>
 #include <pthread.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "can_decoder.h"
 #include "receiver_can.h"
 #include "ring_buffer.h"
+#include "udp_sender.h"
 
 #define WORKERS 4
 
@@ -25,7 +25,7 @@ int main(void) {
 
   raw_frames_buffer *ring_buffer = buf_init();
 
-  pthread_t receiver_thread;
+  pthread_t receiver_thread, udp_sender;
 
   if (pthread_create(&receiver_thread, NULL, receiver_loop, ring_buffer) < 0) {
     perror("[!] Unable to create the receiver thread.\n");
@@ -39,18 +39,25 @@ int main(void) {
   pthread_t decoders[WORKERS];
   for (int i = 0; i < WORKERS; i++) {
     if (pthread_create(&decoders[i], NULL, decoder_loop, ring_buffer) < 0) {
-      perror("[!] Unable to create %d decoder thread.\n");
+      perror("[!] Unable to create decoder thread.\n");
       return 1;
     }
   }
 
-  pthread_join(receiver_thread, NULL);
-  pthread_join(decoders[0], NULL);
-  pthread_join(decoders[1], NULL);
-  pthread_join(decoders[2], NULL);
-  pthread_join(decoders[3], NULL);
-
   printf("[*] Created decoders threads!\n");
+
+  if (pthread_create(&udp_sender, NULL, *udp_loop, NULL) < 0) {
+    perror("[!] Unable to create UDP thread.\n");
+    return 1;
+  }
+
+  printf("[*] Created UDP thread!\n");
+
+  pthread_join(udp_sender, NULL);
+  pthread_join(receiver_thread, NULL);
+  for (int i = 0; i < WORKERS; i++) {
+    pthread_join(decoders[i], NULL);
+  }
 
   return 0;
 }
