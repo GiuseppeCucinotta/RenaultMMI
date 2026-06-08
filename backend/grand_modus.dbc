@@ -4,6 +4,7 @@ BU_: Vehicle Cockpit
 
 BO_ 385 ENGINE: 8 Vehicle
  SG_ ENGINE_RPM : 7|16@0+ (0.125,0) [0|6000] "RPM" Cockpit
+ SG_ VEHICLE_SPEED : 63|8@0+ (1,0) [0|255] "km/h" Cockpit
 
 BO_ 533 GEARBOX: 6 Vehicle
  SG_ REVERSE_GEAR : 14|1@0+ (1,0) [0|1] "" Cockpit
