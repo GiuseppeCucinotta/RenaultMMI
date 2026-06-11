@@ -1,6 +1,10 @@
 #include "receiver_can.h"
 #include "ring_buffer.h"
 
+#include <asm-generic/errno.h>
+#include <bits/types/struct_timeval.h>
+#include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +13,8 @@
 #include <linux/can.h>
 #include <pthread.h>
 #include <sys/socket.h>
+
+extern volatile sig_atomic_t keep_running;
 
 // Bind the socekt to the vcan0
 #include <net/if.h>
@@ -23,6 +29,11 @@ static int init_can_socket() {
     perror("[!] Can't create CAN socket!\n");
     exit(1);
   }
+
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 250;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
 
   unsigned int can_if_index = if_nametoindex("vcan0");
   if (can_if_index == 0) {
@@ -64,11 +75,13 @@ void *receiver_loop(void *b) {
   raw_frames_buffer *ring_buffer = (raw_frames_buffer *)b;
   int can_fd = init_can_socket();
 
-  while (1) {
+  while (keep_running) {
     struct can_frame cf;
     int bytes = get_can_frame(can_fd, &cf);
 
     if (bytes == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        continue;
       perror("Read error.\n");
       continue;
     }
@@ -80,4 +93,6 @@ void *receiver_loop(void *b) {
     // Put frame into the buffer
     frame_put(ring_buffer, cf);
   }
+  close(can_fd);
+  return NULL;
 }
