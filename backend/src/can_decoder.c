@@ -4,11 +4,14 @@
 
 #include <linux/can.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+extern volatile sig_atomic_t keep_running;
 
 // Tracks the current vehicle state
 VehicleState global_vehicle;
@@ -170,6 +173,8 @@ void decoder_init(void) {
       wrapper_decode_lights_and_doors;
   can_table[GRAND_MODUS_LIGHTS_AND_DOORS_FRAME_ID].dlc =
       GRAND_MODUS_LIGHTS_AND_DOORS_LENGTH;
+
+  pthread_mutex_init(&global_vehicle.mutex, NULL);
 }
 
 void print_vehicle_state() {
@@ -224,9 +229,10 @@ static int process_can_frame(struct can_frame *frame) {
 
 void *decoder_loop(void *b) {
   raw_frames_buffer *ring_buffer = (raw_frames_buffer *)b;
-
-  while (1) {
+  while (keep_running) {
     struct can_frame frame_to_decode = frame_get(ring_buffer);
+    if (!keep_running)
+      break;
     int return_value = process_can_frame(&frame_to_decode);
 
     if (return_value == -1)
