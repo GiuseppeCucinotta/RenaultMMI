@@ -2,8 +2,11 @@
 #include <bits/pthreadtypes.h>
 #include <linux/can.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+extern volatile sig_atomic_t keep_running;
 
 struct raw_frames_buffer_t {
   struct can_frame buf[N_FRAMES];
@@ -30,8 +33,14 @@ void frame_put(struct raw_frames_buffer_t *b, struct can_frame frame) {
 struct can_frame frame_get(raw_frames_buffer *b) {
 
   pthread_mutex_lock(&b->mutex);
-  while (b->count == 0)
+  while (b->count == 0 && keep_running)
     pthread_cond_wait(&b->not_empty, &b->mutex);
+
+  if (!keep_running) {
+    pthread_mutex_unlock(&b->mutex);
+    struct can_frame empty_frame = {0};
+    return empty_frame;
+  }
 
   struct can_frame frame = b->buf[b->head];
   b->head = (b->head + 1) & (N_FRAMES - 1);
@@ -67,4 +76,11 @@ raw_frames_buffer *buf_init() {
   }
 
   return b;
+}
+
+void buf_shutdown(raw_frames_buffer *b) {
+  pthread_mutex_lock(&b->mutex);
+  pthread_cond_broadcast(&b->not_empty);
+  pthread_cond_broadcast(&b->not_full);
+  pthread_mutex_unlock(&b->mutex);
 }
