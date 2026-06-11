@@ -4,11 +4,14 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+extern volatile sig_atomic_t keep_running;
 
 /* @brief Create an UDP socket that works on PORT
  * @return 1 if it's unable to create the socket
@@ -34,7 +37,7 @@ void *udp_loop() {
   inet_pton(AF_INET, "127.0.0.1", &local_backend_addr.sin_addr);
 
   VehicleState local_snapshot;
-  while (1) {
+  while (keep_running) {
     pthread_mutex_lock(&global_vehicle.mutex);
     memcpy(&local_snapshot, &global_vehicle.state, sizeof(VehiclePayloadState));
     pthread_mutex_unlock(&global_vehicle.mutex);
@@ -44,4 +47,6 @@ void *udp_loop() {
 
     usleep(N60_REFRESH_MS);
   }
+  close(udp_fd);
+  return NULL;
 }
