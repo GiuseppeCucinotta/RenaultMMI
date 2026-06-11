@@ -1,6 +1,8 @@
 #include <bits/pthreadtypes.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "can_decoder.h"
 #include "receiver_can.h"
@@ -8,6 +10,13 @@
 #include "udp_sender.h"
 
 #define WORKERS 4
+
+volatile sig_atomic_t keep_running = 1;
+
+void handle_sigint(int sig) {
+  (void)sig;
+  keep_running = 0;
+}
 
 void print_intro() {
   puts(" ____                        _ _   __  __ __  __ ___ ");
@@ -20,6 +29,12 @@ void print_intro() {
 }
 
 int main(void) {
+  struct sigaction sa;
+  sa.sa_handler = handle_sigint;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, NULL);
+
   print_intro();
   printf("[*] Initializing system...\n");
 
@@ -52,12 +67,22 @@ int main(void) {
   }
 
   printf("[*] Created UDP thread!\n");
+  printf("[*] Ready! Press CTRL + C to exit.\n");
+  while (keep_running)
+    pause();
+
+  system("clear");
+  printf("[!] Shutdown...\n");
+  buf_shutdown(ring_buffer);
 
   pthread_join(udp_sender, NULL);
   pthread_join(receiver_thread, NULL);
   for (int i = 0; i < WORKERS; i++) {
     pthread_join(decoders[i], NULL);
   }
+
+  free(ring_buffer);
+  printf("Bye!\n");
 
   return 0;
 }
