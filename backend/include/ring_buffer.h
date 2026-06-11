@@ -24,3 +24,8 @@ struct can_frame frame_get(raw_frames_buffer *b);
  * @return Pointer to the struct.
  */
 raw_frames_buffer *buf_init();
+
+/* @brief Wakes up all threads that are waiting on the buffer
+ * @param[in] Pointer to the struct buffer
+ * */
+void buf_shutdown(raw_frames_buffer *b);
