@@ -19,11 +19,18 @@ extern volatile sig_atomic_t keep_running;
 // Bind the socekt to the vcan0
 #include <net/if.h>
 
+#define INTF_NAME "vcan0"
+
 /* @brief Create an AF_CAN socket and binds it to a vcan0 if
  * @return can socket file descriptor */
-// TODO: parametric can if name
-static int init_can_socket() {
+static int init_can_socket(char intf_name[]) {
   int fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
+
+  unsigned int can_if_index = if_nametoindex(intf_name);
+  if (can_if_index == 0) {
+    perror("[!] Unable to get CAN interface index.\n");
+    exit(1);
+  }
 
   if (fd < 0) {
     perror("[!] Can't create CAN socket!\n");
@@ -34,12 +41,6 @@ static int init_can_socket() {
   tv.tv_sec = 0;
   tv.tv_usec = 250;
   setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
-
-  unsigned int can_if_index = if_nametoindex("vcan0");
-  if (can_if_index == 0) {
-    perror("[!] Unable to get CAN interface index.\n");
-    exit(1);
-  }
 
   struct sockaddr_can addr_can = {
       .can_family = AF_CAN,
@@ -73,7 +74,7 @@ static int get_can_frame(int socket_fd, struct can_frame *cf) {
 
 void *receiver_loop(void *b) {
   raw_frames_buffer *ring_buffer = (raw_frames_buffer *)b;
-  int can_fd = init_can_socket();
+  int can_fd = init_can_socket(INTF_NAME);
 
   while (keep_running) {
     struct can_frame cf;
