@@ -2,7 +2,7 @@
 This document contains a list of the Hardware needed to replicate the project. 
 
 > [!WARNING]
-> This list is not intendend as a complete list right now. It will be updated during the project and this warning will disappear.
+> This list is not meant as a complete one right now. I will update it during the project.
 
 ## Main Components
 These are the components required for the system. Without they, what you even want to do?
