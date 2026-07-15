@@ -1,0 +1,54 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": true,
+  "lsp": true,
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      ".git/**",
+      "dist-electron/**",
+      ".cache/**"
+    ]
+  },
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "cat ./*": "allow",
+      "head ./*": "allow",
+      "tail ./*": "allow",
+      "grep *": "allow",
+      "ls": "allow",
+      "git diff": "allow",
+      "git status": "allow",
+      "git commit *": "allow"
+    }
+  },
+  "attachment": {
+    "image": {
+      "auto_resize": true,
+      "max_width": 3840,
+      "max_height": 2160,
+      "max_base64_bytes": 5242880
+    }
+  },
+  "mcp": {
+    "shadcn": {
+      "type": "local",
+      "command": [
+        "npx",
+        "shadcn@latest",
+        "mcp"
+      ],
+      "enabled": true
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "frontend/src/"
+      ],
+      "enabled": true
+    } 
+  }
+}
