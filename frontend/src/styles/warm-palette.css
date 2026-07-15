@@ -1,0 +1,37 @@
+/**
+ * Warm amber palette from DESIGN.md
+ * Monochromatic amber scale (50–950) for the infotainment UI
+ *
+ * Namespaced as "warm" to avoid conflicting with Tailwind's built-in amber.
+ *
+ * Usage in Tailwind v4 classes:
+ *   text-warm-50, bg-warm-100, border-warm-200, etc.
+ *
+ * Or as CSS variables:
+ *   var(--warm-50), var(--warm-100), ... var(--warm-950)
+ */
+
+:root {
+  /* Warm 50 — Primary Text, Highlights */
+  --warm-50: #fff7ea;
+  /* Warm 100 — Secondary Text (Weather, Time) */
+  --warm-100: #fdeac8;
+  /* Warm 200 — Borders, Dividers */
+  --warm-200: #fdd38b;
+  /* Warm 300 — Status Icons (Fuel, Consumption) */
+  --warm-300: #faab23;
+  /* Warm 400 — Secondary Icons */
+  --warm-400: #f49e0a;
+  /* Warm 500 — Main Action Color (active nav, play buttons, key data) */
+  --warm-500: #da8c05;
+  /* Warm 600 — Pressed states */
+  --warm-600: #b37409;
+  /* Warm 700 — Inactive Icons (low opacity) */
+  --warm-700: #90600d;
+  /* Warm 800 — Shadows, Depth */
+  --warm-800: #76500e;
+  /* Warm 900 — Darker surfaces */
+  --warm-900: #442c02;
+  /* Warm 950 — Base Background */
+  --warm-950: #442b02;
+}

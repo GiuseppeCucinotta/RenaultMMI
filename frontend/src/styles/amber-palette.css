@@ -1,0 +1,35 @@
+/**
+ * Amber color palette from DESIGN.md
+ * Monochromatic amber scale (50–950) for the infotainment UI
+ *
+ * Usage in Tailwind v4 classes:
+ *   text-amber-50, bg-amber-100, border-amber-200, etc.
+ *
+ * Or as CSS variables:
+ *   var(--amber-50), var(--amber-100), ... var(--amber-950)
+ */
+
+:root {
+  /* Amber 50 — Primary Text, Highlights */
+  --amber-50: hsl(39, 100, 96);
+  /* Amber 100 — Secondary Text (Weather, Time) */
+  --amber-100: hsl(38, 96, 89);
+  /* Amber 200 — Borders, Dividers */
+  --amber-200: hsl(38, 97, 77);
+  /* Amber 300 — Status Icons (Fuel, Consumption) */
+  --amber-300: hsl(38, 97, 65);
+  /* Amber 400 — Secondary Icons */
+  --amber-400: hsl(38, 96, 56);
+  /* Amber 500 — Main Action Color (active nav, play buttons, key data) */
+  --amber-500: hsl(38, 92, 50);
+  /* Amber 600 — Pressed states */
+  --amber-600: hsl(38, 95, 44);
+  /* Amber 700 — Inactive Icons (low opacity) */
+  --amber-700: hsl(38, 90, 37);
+  /* Amber 800 — Shadows, Depth */
+  --amber-800: hsl(38, 83, 31);
+  /* Amber 900 — Darker surfaces */
+  --amber-900: hsl(38, 78, 26);
+  /* Amber 950 — Base Background */
+  --amber-950: hsl(37, 92, 14);
+}
