@@ -1,2 +1,5 @@
 export { DebugPanel } from "./DebugPanel";
-export type { LogMessage, SystemInfo, EnvEntry } from "./debug.types";
+export { MediaFeedPanel } from "./MediaFeedPanel";
+export { VolumePanel } from "./VolumePanel";
+export { LanguagePanel } from "./LanguagePanel";
+export type { LogMessage, SystemInfo, AppInfo, UdpFrame, EnvEntry } from "./debug.types";

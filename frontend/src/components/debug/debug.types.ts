@@ -11,8 +11,20 @@ export interface SystemInfo {
   electron: string;
   platform: string;
   arch: string;
-  memory: { total: number; used: number; percent: number };
+  cpu: { percent: number };
+  memory: { rss: number; heapUsed: number; systemTotal: number; percent: number };
   uptime: number;
+}
+
+export interface AppInfo {
+  name: string;
+  version: string;
+}
+
+export interface UdpFrame {
+  hex: string;
+  size: number;
+  time: number;
 }
 
 export interface EnvEntry {
