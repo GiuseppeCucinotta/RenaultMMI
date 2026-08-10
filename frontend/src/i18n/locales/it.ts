@@ -1,0 +1,67 @@
+import type { Messages } from "./en";
+
+export const it: Messages = {
+  nav: {
+    home: "Home",
+    phone: "Telefono",
+    media: "Media",
+  },
+  apps: {
+    fuel: "Carburante",
+    equalizer: "Equalizzatore",
+    playlist: "Playlist",
+    speedometer: "Tachimetro",
+    history: "Cronologia",
+    camera: "Telecamera",
+    parking: "Parcheggio",
+    settings: "Impostazioni",
+  },
+  media: {
+    noMedia: "Nessun media",
+    noSource: "Nessuna sorgente",
+    sources: {
+      bluetooth: "Bluetooth",
+      cd: "CD",
+      fm: "FM",
+      jukebox: "Jukebox",
+    },
+    bluetooth: {
+      noPhoneConnected: "Nessun telefono connesso",
+    },
+    audioSourcesAria: "Sorgenti audio",
+    player: {
+      library: "Libreria",
+      nowPlaying: "In riproduzione",
+      backToLibrary: "Torna alla libreria",
+      backToNowPlaying: "Torna alla riproduzione",
+      previousTrack: "Brano precedente",
+      play: "Riproduci",
+      pause: "Pausa",
+      nextTrack: "Brano successivo",
+      playbackPosition: "Posizione di riproduzione",
+      closeQueue: "Chiudi coda",
+    },
+    jukebox: {
+      scanningTitle: "Scansione della libreria",
+      scanningHint: "Lettura della cartella musicale. Viene eseguita una sola volta.",
+      errorTitle: "Qualcosa è andato storto",
+      retryScan: "Riprova scansione",
+      emptyTitle: "Nessuna musica",
+      emptyHint: "Inserisci gli album nella cartella musicale dell'auto, poi esegui la scansione.",
+      scan: "Scansiona",
+      libraryAria: "Libreria album del jukebox",
+      playAlbum: "Riproduci {title} di {artist}",
+      queue: "Coda",
+      queueAria: "Prossimi brani",
+      playingNow: "In riproduzione",
+      currentTrack: "Brano corrente",
+      trackCount: "brani",
+      playTrackInQueue: "Salta a {title}",
+    },
+  },
+  car: {
+    statusOk: "OK",
+    title: "Auto",
+    wireframeAlt: "Sagoma del veicolo",
+  },
+};

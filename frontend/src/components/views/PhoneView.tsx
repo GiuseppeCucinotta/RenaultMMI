@@ -1,6 +1,8 @@
 import { Smartphone } from "lucide-react";
 import { PlaceholderView } from "./PlaceholderView";
+import { useI18n } from "@/i18n";
 
 export function PhoneView() {
-  return <PlaceholderView icon={Smartphone} label="Phone" />;
+  const { t } = useI18n();
+  return <PlaceholderView icon={Smartphone} label={t("nav.phone")} />;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n, type TranslationKey } from "@/i18n";
 import type { NavId } from "@/types/navigation";
 
 import homeIcon from "@/assets/icons/views/home.svg";
@@ -13,13 +14,14 @@ interface NavbarProps {
   onGearScroll?: (direction: "up" | "down") => void;
 }
 
-const navItems = [
-  { id: "home" as NavId, icon: homeIcon, label: "Home" },
-  { id: "phone" as NavId, icon: phoneIcon, label: "Phone" },
-  { id: "media" as NavId, icon: mediaIcon, label: "Media" },
+const navItems: { id: NavId; icon: string; labelKey: TranslationKey }[] = [
+  { id: "home", icon: homeIcon, labelKey: "nav.home" },
+  { id: "phone", icon: phoneIcon, labelKey: "nav.phone" },
+  { id: "media", icon: mediaIcon, labelKey: "nav.media" },
 ];
 
 export function Navbar({ className, activeId, onNavigate, onGearScroll }: NavbarProps) {
+  const { t } = useI18n();
   const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function Navbar({ className, activeId, onNavigate, onGearScroll }: Navbar
               
               <img 
                 src={item.icon} 
-                alt={item.label}
+                alt={t(item.labelKey)}
                 className={cn(
                   "relative  z-10 transition-all duration-300 w-12 h-12 object-contain", 
                   isActive ? "scale-110 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "opacity-50"
