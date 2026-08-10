@@ -1,36 +1,87 @@
-import { defineConfig } from 'vite'
-import path from 'node:path'
-import electron from 'vite-plugin-electron/simple'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { defineConfig, mergeConfig } from "vite";
+import path from "node:path";
+import electron from "vite-plugin-electron";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
-// https://vitejs.dev/config/
+const ROOT = process.cwd();
+const esmodule = true;
+
+// vite-plugin-electron only launches Electron from whichever entry finishes
+// building LAST (its onstart). The jukebox service is the biggest bundle and
+// usually finishes last, so a no-op onstart there would leave the app never
+// opening. Routing every entry through the guarded `reload()` (launches
+// Electron on first build, hot-reloads the renderer afterwards) makes the
+// startup order-independent.
+function startOrReload(args: { reload: () => void }) {
+  args.reload();
+}
+
+function buildMainProcesses() {
+  // Preload entry, mirroring the `electronSimple` helper config so it keeps
+  // producing `dist-electron/preload.mjs` with sandbox-compatible CJS output.
+  const preload = {
+    onstart: startOrReload,
+    vite: mergeConfig(
+      {
+        build: {
+          rollupOptions: {
+            input: path.join(ROOT, "electron/preload.ts"),
+            output: {
+              format: "cjs",
+              inlineDynamicImports: true,
+              entryFileNames: `[name].${esmodule ? "mjs" : "js"}`,
+              chunkFileNames: `[name].${esmodule ? "mjs" : "js"}`,
+              assetFileNames: "[name].[ext]",
+            },
+          },
+        },
+      },
+      {},
+    ),
+  };
+
+  const main = {
+    entry: "electron/main.ts",
+    onstart: startOrReload,
+  };
+
+  // Standalone jukebox service (scan + mpv playback + HTTP/SSE API).
+  const jukebox = {
+    entry: { index: path.join(ROOT, "jukebox-service/index.ts") },
+    onstart: startOrReload,
+    vite: {
+      build: {
+        outDir: "dist-electron/jukebox",
+        minify: false,
+      },
+    },
+  };
+
+  // Standalone bluetooth service (BlueZ D-Bus bridge + HTTP/SSE API).
+  const bluetooth = {
+    entry: { index: path.join(ROOT, "bluetooth-service/index.ts") },
+    onstart: startOrReload,
+    vite: {
+      build: {
+        outDir: "dist-electron/bluetooth",
+        minify: false,
+      },
+    },
+  };
+
+  return electron([main, jukebox, bluetooth, preload]);
+}
+
 export default defineConfig({
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(ROOT, "./src"),
     },
   },
   plugins: [
     react(),
     tailwindcss(),
-    electron({
-      main: {
-        // Shortcut of `build.lib.entry`.
-        entry: 'electron/main.ts',
-      },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'electron/preload.ts'),
-      },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer: process.env.NODE_ENV === 'test'
-        // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-        ? undefined
-        : {},
-    }),
+    buildMainProcesses(),
   ],
-})
+});
