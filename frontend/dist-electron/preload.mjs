@@ -1,14 +1,16 @@
 "use strict";
 const electron = require("electron");
+const ipcWrappedListeners = /* @__PURE__ */ new Map();
 electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   on(channel, listener) {
-    return electron.ipcRenderer.on(
-      channel,
-      (event, ...args) => listener(event, ...args)
-    );
+    const wrapped = (event, ...args) => listener(event, ...args);
+    ipcWrappedListeners.set(listener, wrapped);
+    return electron.ipcRenderer.on(channel, wrapped);
   },
   off(channel, listener) {
-    return electron.ipcRenderer.off(channel, listener);
+    const wrapped = ipcWrappedListeners.get(listener);
+    ipcWrappedListeners.delete(listener);
+    return electron.ipcRenderer.off(channel, wrapped ?? listener);
   },
   send(channel, ...args) {
     return electron.ipcRenderer.send(channel, ...args);
@@ -20,23 +22,52 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   chrome: () => process.versions.chrome,
   electron: () => process.versions.electron
 });
+electron.contextBridge.exposeInMainWorld("jukebox", {
+  getEndpoint: async () => electron.ipcRenderer.invoke("jukebox:get-endpoint")
+});
+electron.contextBridge.exposeInMainWorld("bluetooth", {
+  getEndpoint: async () => electron.ipcRenderer.invoke("bluetooth:get-endpoint")
+});
+electron.contextBridge.exposeInMainWorld("entertainmentAudio", {
+  getState: () => electron.ipcRenderer.invoke("entertainment:get-state"),
+  setVolume: (volume) => electron.ipcRenderer.invoke("entertainment:set-volume", { volume }),
+  setActiveSource: (sourceId) => electron.ipcRenderer.invoke("entertainment:set-source", { sourceId }),
+  onStateChanged: (callback) => {
+    const listener = (_, state) => callback(state);
+    electron.ipcRenderer.on("entertainment:state-changed", listener);
+    return () => electron.ipcRenderer.removeListener("entertainment:state-changed", listener);
+  }
+});
 electron.contextBridge.exposeInMainWorld("debugAPI", {
-  getSystemInfo: () => {
-    const mem = typeof process.memoryUsage === "function" ? process.memoryUsage() : null;
-    return Promise.resolve({
+  getSystemInfo: async () => {
+    const cpu = typeof process.getCPUUsage === "function" ? process.getCPUUsage() : { percentCPUUsage: 0 };
+    const sysMem = typeof process.getSystemMemoryInfo === "function" ? process.getSystemMemoryInfo() : null;
+    const systemTotal = sysMem ? sysMem.total * 1024 : 0;
+    let rss = 0;
+    try {
+      const procMem = await process.getProcessMemoryInfo();
+      const workingSet = procMem.workingSetSize ?? 0;
+      rss = workingSet * 1024;
+    } catch {
+    }
+    const heap = typeof process.getHeapStatistics === "function" ? process.getHeapStatistics() : null;
+    return {
       node: process.versions.node,
       chrome: process.versions.chrome,
       electron: process.versions.electron,
       platform: process.platform,
       arch: process.arch,
-      memory: mem ? {
-        total: mem.rss,
-        used: mem.heapUsed,
-        percent: Math.round(mem.heapUsed / mem.heapTotal * 100)
-      } : { total: 0, used: 0, percent: 0 },
+      cpu: { percent: Math.max(0, Math.min(100, Math.round(cpu.percentCPUUsage))) },
+      memory: {
+        rss,
+        heapUsed: heap?.usedHeapSize ?? 0,
+        systemTotal,
+        percent: systemTotal > 0 ? Math.round(rss / systemTotal * 100) : 0
+      },
       uptime: Math.floor(process.uptime())
-    });
+    };
   },
+  getAppInfo: () => electron.ipcRenderer.invoke("get-app-info"),
   getEnvVars: () => {
     const result = {};
     for (const [key, value] of Object.entries(process.env || {})) {
