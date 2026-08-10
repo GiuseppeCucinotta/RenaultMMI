@@ -11,25 +11,25 @@
 
 :root {
   /* Amber 50 — Primary Text, Highlights */
-  --amber-50: hsl(39, 100, 96);
+  --amber-50: hsl(39, 100%, 96%);
   /* Amber 100 — Secondary Text (Weather, Time) */
-  --amber-100: hsl(38, 96, 89);
+  --amber-100: hsl(38, 96%, 89%);
   /* Amber 200 — Borders, Dividers */
-  --amber-200: hsl(38, 97, 77);
+  --amber-200: hsl(38, 97%, 77%);
   /* Amber 300 — Status Icons (Fuel, Consumption) */
-  --amber-300: hsl(38, 97, 65);
+  --amber-300: hsl(38, 97%, 65%);
   /* Amber 400 — Secondary Icons */
-  --amber-400: hsl(38, 96, 56);
+  --amber-400: hsl(38, 96%, 56%);
   /* Amber 500 — Main Action Color (active nav, play buttons, key data) */
-  --amber-500: hsl(38, 92, 50);
+  --amber-500: hsl(38, 92%, 50%);
   /* Amber 600 — Pressed states */
-  --amber-600: hsl(38, 95, 44);
+  --amber-600: hsl(38, 95%, 44%);
   /* Amber 700 — Inactive Icons (low opacity) */
-  --amber-700: hsl(38, 90, 37);
+  --amber-700: hsl(38, 90%, 37%);
   /* Amber 800 — Shadows, Depth */
-  --amber-800: hsl(38, 83, 31);
+  --amber-800: hsl(38, 83%, 31%);
   /* Amber 900 — Darker surfaces */
-  --amber-900: hsl(38, 78, 26);
+  --amber-900: hsl(38, 78%, 26%);
   /* Amber 950 — Base Background */
-  --amber-950: hsl(37, 92, 14);
+  --amber-950: hsl(37, 92%, 14%);
 }
