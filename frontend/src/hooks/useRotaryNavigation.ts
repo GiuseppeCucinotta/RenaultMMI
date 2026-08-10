@@ -29,8 +29,21 @@ export function useRotaryNavigation({
       const items = getItems();
       const target = items[index];
       if (target) {
-        target.focus();
+        target.focus({ preventScroll: true });
         indexRef.current = index;
+      }
+    },
+    [getItems],
+  );
+
+  const focusElement = useCallback(
+    (element: HTMLElement | null) => {
+      if (!element) return;
+      const items = getItems();
+      const idx = items.indexOf(element);
+      if (idx !== -1) {
+        element.focus({ preventScroll: true });
+        indexRef.current = idx;
       }
     },
     [getItems],
@@ -126,5 +139,5 @@ export function useRotaryNavigation({
     };
   }, [enabled, focusNext, focusPrev, focusItem, getItems, selector]);
 
-  return { containerRef, enabled };
+  return { containerRef, enabled, focusElement };
 }

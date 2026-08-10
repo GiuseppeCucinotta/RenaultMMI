@@ -20,6 +20,26 @@
   --color-warm-900: var(--warm-900);
   --color-warm-950: var(--warm-950);
 
+  --animate-cd-spin: cd-spin 4s linear infinite;
+
+  @keyframes cd-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  --animate-eq-bar: eq-bar 1.1s ease-in-out infinite;
+
+  @keyframes eq-bar {
+    0%,
+    100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
