@@ -70,7 +70,19 @@ function buildMainProcesses() {
     },
   };
 
-  return electron([main, jukebox, bluetooth, preload]);
+  // Standalone CD service (optical drive watcher + mpv playback + HTTP/SSE API).
+  const cd = {
+    entry: { index: path.join(ROOT, "cd-service/index.ts") },
+    onstart: startOrReload,
+    vite: {
+      build: {
+        outDir: "dist-electron/cd",
+        minify: false,
+      },
+    },
+  };
+
+  return electron([main, jukebox, bluetooth, cd, preload]);
 }
 
 export default defineConfig({

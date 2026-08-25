@@ -19,16 +19,20 @@ let win: BrowserWindow | null
 let debugWin: BrowserWindow | null
 let jukeboxService: ChildProcess | null = null
 let bluetoothService: ChildProcess | null = null
+let cdService: ChildProcess | null = null
 
 const udpProbe = createUdpProbe()
 
 const JUKEBOX_PORT = process.env.JUKEBOX_PORT ?? '4100'
 const JUKEBOX_MUSIC_ROOT = process.env.JUKEBOX_MUSIC_ROOT
 const BLUETOOTH_PORT = process.env.BLUETOOTH_PORT ?? '4200'
+const CD_PORT = process.env.CD_PORT ?? '4300'
+const CD_DEVICE = process.env.CD_DEVICE
 
 const entertainment = new EntertainmentVolumeController({
   jukeboxPort: Number(JUKEBOX_PORT),
   bluetoothPort: Number(BLUETOOTH_PORT),
+  cdPort: Number(CD_PORT),
   defaultSourceId: 'bluetooth',
 })
 
@@ -76,6 +80,8 @@ ipcMain.handle('entertainment:set-source', async (_event, payload: { sourceId?: 
   } else if (previous === 'bluetooth') {
     await sendPlaybackStop(BLUETOOTH_PORT)
     stopBluetoothService()
+  } else if (previous === 'cd') {
+    await sendPlaybackStop(CD_PORT)
   }
 
   // Guarantee the incoming source's service is up (bluetooth always restarts).
@@ -83,6 +89,8 @@ ipcMain.handle('entertainment:set-source', async (_event, payload: { sourceId?: 
     startBluetoothService()
   } else if (sourceId === 'jukebox') {
     startJukeboxService()
+  } else if (sourceId === 'cd') {
+    startCdService()
   }
 
   return entertainment.setActiveSource(sourceId)
@@ -99,6 +107,10 @@ ipcMain.handle('jukebox:get-endpoint', () => ({
 
 ipcMain.handle('bluetooth:get-endpoint', () => ({
   baseUrl: `http://127.0.0.1:${BLUETOOTH_PORT}`,
+}))
+
+ipcMain.handle('cd:get-endpoint', () => ({
+  baseUrl: `http://127.0.0.1:${CD_PORT}`,
 }))
 
 ipcMain.on('debug-media-feed', (_event, feed: unknown) => {
@@ -172,6 +184,40 @@ function stopBluetoothService() {
     bluetoothService.kill()
   }
   bluetoothService = null
+}
+
+function startCdService() {
+  if (cdService && !cdService.killed) return
+
+  const entry = path.join(__dirname, 'cd', 'index.js')
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    CD_PORT,
+  }
+  if (CD_DEVICE) {
+    env.CD_DEVICE = CD_DEVICE
+  }
+
+  cdService = spawn(process.execPath, [entry], {
+    env,
+    stdio: 'ignore',
+  })
+
+  cdService.on('error', (error) => {
+    console.error('[cd] failed to spawn service:', error.message)
+    cdService = null
+  })
+  cdService.on('exit', () => {
+    cdService = null
+  })
+}
+
+function stopCdService() {
+  if (cdService && !cdService.killed) {
+    cdService.kill()
+  }
+  cdService = null
 }
 
 function createWindow() {
@@ -263,12 +309,14 @@ app.on('activate', () => {
 app.whenReady().then(() => {
   startJukeboxService()
   startBluetoothService()
+  startCdService()
   createWindow()
 })
 
 app.on('will-quit', () => {
   stopJukeboxService()
   stopBluetoothService()
+  stopCdService()
 })
 
 export { createDebugWindow, toggleDebugWindow }

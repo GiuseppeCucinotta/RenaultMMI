@@ -9,7 +9,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "tsx": "tsx",
-    "bluetooth:debug": "tsx bluetooth-service/index.ts"
+    "bluetooth:debug": "tsx bluetooth-service/index.ts",
+    "cd:debug": "tsx cd-service/index.ts"
   },
   "dependencies": {
     "@radix-ui/react-slider": "^1.3.6",

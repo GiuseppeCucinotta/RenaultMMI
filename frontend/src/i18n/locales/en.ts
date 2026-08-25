@@ -26,6 +26,9 @@ export const en = {
     bluetooth: {
       noPhoneConnected: "No phone connected",
     },
+    cd: {
+      noDisc: "No disc",
+    },
     audioSourcesAria: "Audio sources",
     player: {
       library: "Library",

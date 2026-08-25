@@ -32,8 +32,9 @@ Dual-codebase infotainment project (Raspberry Pi 5 target, Waveshare 8.8" 1920×
 ## Frontend (`frontend/`)
 
 - **Jukebox** is a standalone Node service (`jukebox-service/`) spawned by Electron main via `spawn(process.execPath, [entry], { ELECTRON_RUN_AS_NODE: "1" })`. HTTP + SSE API on `127.0.0.1:4100`; renderer reaches it through `window.jukebox.getEndpoint()` (IPC `jukebox:get-endpoint`).
-- **Entertainment volume:** `EntertainmentVolumeController` (main process) owns a 0–30 volume and applies it only to the active source's audio backend — only `jukebox` is wired; `bluetooth` (the default source) is a no-op placeholder. Exposed via `window.entertainmentAudio` (`entertainment:*` IPC). Never touch system/master volume.
-- **Media sources are pluggable:** add a real adapter to `SOURCE_ADAPTER_FACTORIES` in `src/hooks/useMediaSourceAdapters.ts` to make a new source (BT/CD/FM) appear in the home now-playing player.
+- **CD** follows the same pattern: standalone Node service (`cd-service/`) on `127.0.0.1:4300` (`window.cd.getEndpoint()`), spawned/stopped alongside the others. Plays audio CDs via mpv `cdda://` (needs libcdio-paranoia) and MP3/data discs via udisks2 mounting; drive/media detection is dependency-free (udevadm + sysfs polling). Discs autoplay on insertion; no disc → graceful "No disc" placeholder. Env vars: `CD_PORT`, `CD_DEVICE`, `CD_MPV_BINARY`.
+- **Entertainment volume:** `EntertainmentVolumeController` (main process) owns a 0–30 volume and applies it only to the active source's audio backend — `jukebox`, `bluetooth` (the default source) and `cd` are wired; FM is still a no-op placeholder. Exposed via `window.entertainmentAudio` (`entertainment:*` IPC). Never touch system/master volume.
+- **Media sources are pluggable:** add a real adapter to `SOURCE_ADAPTER_FACTORIES` in `src/hooks/useMediaSourceAdapters.ts` to make a new source (FM) appear in the home now-playing player.
 - **i18n:** `src/i18n` has `locales/en.ts` + `locales/it.ts` (I18nProvider). Update both when touching strings.
 
 ## Commands
@@ -62,7 +63,7 @@ npm run tsx      # run TS scripts directly
   # or: cansend vcan0 181#1910000000000000
   ```
 - **Build/lint fail on unused code:** `npm run build` runs `tsc` first with `strict` + `noUnusedLocals/Parameters`; lint is `--max-warnings 0`. Keep imports/params clean.
-- **vite-plugin-electron only launches Electron from the LAST-built entry's onstart.** All three entries (`main`, `jukebox`, `preload`) share the guarded `startOrReload` helper in `vite.config.ts` — don't make any entry's onstart a no-op or the app may never open.
+- **vite-plugin-electron only launches Electron from the LAST-built entry's onstart.** All entries (`main`, `jukebox`, `bluetooth`, `cd`, `preload`) share the guarded `startOrReload` helper in `vite.config.ts` — don't make any entry's onstart a no-op or the app may never open.
 - **Jukebox requires `mpv`** (driven via `node-mpv`). Env vars: `JUKEBOX_MUSIC_ROOT` (default `~/Music`), `JUKEBOX_MPV_BINARY`, `JUKEBOX_PORT` (4100).
 - **Bluetooth cover art (AVRCP 1.6 BIP):** `bluetooth-service/artwork.ts` pulls thumbnails from the phone via OBEX (`bip-avrcp`). Needs **BlueZ ≥ 5.79** with **`bluetoothd --experimental`** (adds MediaPlayer1 `ObexPort`) and a running **`obexd`**; without them the service stays idle and the UI shows placeholder art. Android needs AVRCP 1.6 in Developer Options on many devices; iOS 13+ works out of the box. Cache: `BLUETOOTH_ARTWORK_DIR` (default `$TMPDIR/renault-mmi-artwork`), served at `/api/artwork/:handle.jpg`.
 - **Plain-browser dev (no Electron):** jukebox is unreachable, so `useJukebox` falls back to `src/data/jukebox.mock.ts` to keep the UI usable.

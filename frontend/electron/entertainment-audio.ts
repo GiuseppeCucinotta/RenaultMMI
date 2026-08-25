@@ -49,7 +49,7 @@ class ServiceVolumeBackend implements VolumeBackend {
 /** Fallback for sources whose audio stream is not wired up yet: change nothing system-wide. */
 class NoopVolumeBackend implements VolumeBackend {
   async apply(): Promise<void> {
-    // The source has no real stream yet (CD/FM placeholders). A real backend is
+    // The source has no real stream yet (FM placeholder). A real backend is
     // registered in `sourceBackends` once the source produces audio.
   }
 }
@@ -67,7 +67,7 @@ export class EntertainmentVolumeController extends EventEmitter {
   private readonly defaultBackend: VolumeBackend
   private readonly sourceBackends: Record<string, VolumeBackend>
 
-  constructor(options: { jukeboxPort: number; bluetoothPort: number; defaultSourceId: string }) {
+  constructor(options: { jukeboxPort: number; bluetoothPort: number; cdPort: number; defaultSourceId: string }) {
     super()
     this.volume = VOLUME_DEFAULT
     this.activeSourceId = options.defaultSourceId
@@ -75,6 +75,7 @@ export class EntertainmentVolumeController extends EventEmitter {
     this.sourceBackends = {
       jukebox: new ServiceVolumeBackend('jukebox', options.jukeboxPort),
       bluetooth: new ServiceVolumeBackend('bluetooth', options.bluetoothPort),
+      cd: new ServiceVolumeBackend('cd', options.cdPort),
     }
   }
 

@@ -63,6 +63,11 @@ contextBridge.exposeInMainWorld("bluetooth", {
     ipcRenderer.invoke("bluetooth:get-endpoint") as Promise<{ baseUrl: string }>,
 });
 
+contextBridge.exposeInMainWorld("cd", {
+  getEndpoint: async (): Promise<{ baseUrl: string }> =>
+    ipcRenderer.invoke("cd:get-endpoint") as Promise<{ baseUrl: string }>,
+});
+
 contextBridge.exposeInMainWorld("entertainmentAudio", {
   getState: (): Promise<EntertainmentVolumeState> =>
     ipcRenderer.invoke("entertainment:get-state") as Promise<EntertainmentVolumeState>,

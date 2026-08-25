@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { JukeboxProvider } from './context/JukeboxProvider'
 import { BluetoothProvider } from './context/BluetoothProvider'
+import { CdProvider } from './context/CdProvider'
 import { I18nProvider } from './i18n'
 import './index.css'
 
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <I18nProvider>
       <BluetoothProvider>
         <JukeboxProvider>
-          <App />
+          <CdProvider>
+            <App />
+          </CdProvider>
         </JukeboxProvider>
       </BluetoothProvider>
     </I18nProvider>

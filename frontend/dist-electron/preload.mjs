@@ -28,6 +28,9 @@ electron.contextBridge.exposeInMainWorld("jukebox", {
 electron.contextBridge.exposeInMainWorld("bluetooth", {
   getEndpoint: async () => electron.ipcRenderer.invoke("bluetooth:get-endpoint")
 });
+electron.contextBridge.exposeInMainWorld("cd", {
+  getEndpoint: async () => electron.ipcRenderer.invoke("cd:get-endpoint")
+});
 electron.contextBridge.exposeInMainWorld("entertainmentAudio", {
   getState: () => electron.ipcRenderer.invoke("entertainment:get-state"),
   setVolume: (volume) => electron.ipcRenderer.invoke("entertainment:set-volume", { volume }),

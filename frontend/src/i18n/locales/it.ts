@@ -28,6 +28,9 @@ export const it: Messages = {
     bluetooth: {
       noPhoneConnected: "Nessun telefono connesso",
     },
+    cd: {
+      noDisc: "Nessun disco",
+    },
     audioSourcesAria: "Sorgenti audio",
     player: {
       library: "Libreria",

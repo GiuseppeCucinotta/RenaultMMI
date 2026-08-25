@@ -31,11 +31,12 @@ const VOLUME_DEFAULT = 25;
 function percentFromEntertainment(volume) {
   return Math.round(volume / VOLUME_MAX * 100);
 }
-class JukeboxVolumeBackend {
-  baseUrl;
-  constructor(jukeboxPort) {
-    this.baseUrl = `http://127.0.0.1:${jukeboxPort}`;
+class ServiceVolumeBackend {
+  constructor(label, port) {
+    this.label = label;
+    this.baseUrl = `http://127.0.0.1:${port}`;
   }
+  baseUrl;
   async apply(percent) {
     try {
       await fetch(`${this.baseUrl}/api/volume`, {
@@ -44,24 +45,7 @@ class JukeboxVolumeBackend {
         body: JSON.stringify({ volume: percent })
       });
     } catch (error) {
-      console.error("[entertainment] failed to set jukebox volume:", error instanceof Error ? error.message : error);
-    }
-  }
-}
-class BluetoothVolumeBackend {
-  baseUrl;
-  constructor(bluetoothPort) {
-    this.baseUrl = `http://127.0.0.1:${bluetoothPort}`;
-  }
-  async apply(percent) {
-    try {
-      await fetch(`${this.baseUrl}/api/volume`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ volume: percent })
-      });
-    } catch (error) {
-      console.error("[entertainment] failed to set bluetooth volume:", error instanceof Error ? error.message : error);
+      console.error(`[entertainment] failed to set ${this.label} volume:`, error instanceof Error ? error.message : error);
     }
   }
 }
@@ -80,8 +64,9 @@ class EntertainmentVolumeController extends EventEmitter {
     this.activeSourceId = options.defaultSourceId;
     this.defaultBackend = new NoopVolumeBackend();
     this.sourceBackends = {
-      jukebox: new JukeboxVolumeBackend(options.jukeboxPort),
-      bluetooth: new BluetoothVolumeBackend(options.bluetoothPort)
+      jukebox: new ServiceVolumeBackend("jukebox", options.jukeboxPort),
+      bluetooth: new ServiceVolumeBackend("bluetooth", options.bluetoothPort),
+      cd: new ServiceVolumeBackend("cd", options.cdPort)
     };
   }
   getState() {
@@ -118,13 +103,17 @@ let win;
 let debugWin;
 let jukeboxService = null;
 let bluetoothService = null;
+let cdService = null;
 const udpProbe = createUdpProbe();
 const JUKEBOX_PORT = process.env.JUKEBOX_PORT ?? "4100";
 const JUKEBOX_MUSIC_ROOT = process.env.JUKEBOX_MUSIC_ROOT;
 const BLUETOOTH_PORT = process.env.BLUETOOTH_PORT ?? "4200";
+const CD_PORT = process.env.CD_PORT ?? "4300";
+const CD_DEVICE = process.env.CD_DEVICE;
 const entertainment = new EntertainmentVolumeController({
   jukeboxPort: Number(JUKEBOX_PORT),
   bluetoothPort: Number(BLUETOOTH_PORT),
+  cdPort: Number(CD_PORT),
   defaultSourceId: "bluetooth"
 });
 function broadcastEntertainmentState(state) {
@@ -162,11 +151,15 @@ ipcMain.handle("entertainment:set-source", async (_event, payload) => {
   } else if (previous === "bluetooth") {
     await sendPlaybackStop(BLUETOOTH_PORT);
     stopBluetoothService();
+  } else if (previous === "cd") {
+    await sendPlaybackStop(CD_PORT);
   }
   if (sourceId === "bluetooth") {
     startBluetoothService();
   } else if (sourceId === "jukebox") {
     startJukeboxService();
+  } else if (sourceId === "cd") {
+    startCdService();
   }
   return entertainment.setActiveSource(sourceId);
 });
@@ -179,6 +172,9 @@ ipcMain.handle("jukebox:get-endpoint", () => ({
 }));
 ipcMain.handle("bluetooth:get-endpoint", () => ({
   baseUrl: `http://127.0.0.1:${BLUETOOTH_PORT}`
+}));
+ipcMain.handle("cd:get-endpoint", () => ({
+  baseUrl: `http://127.0.0.1:${CD_PORT}`
 }));
 ipcMain.on("debug-media-feed", (_event, feed) => {
   win?.webContents.send("debug-media-feed", feed);
@@ -240,6 +236,35 @@ function stopBluetoothService() {
     bluetoothService.kill();
   }
   bluetoothService = null;
+}
+function startCdService() {
+  if (cdService && !cdService.killed) return;
+  const entry = path.join(__dirname$1, "cd", "index.js");
+  const env = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: "1",
+    CD_PORT
+  };
+  if (CD_DEVICE) {
+    env.CD_DEVICE = CD_DEVICE;
+  }
+  cdService = spawn(process.execPath, [entry], {
+    env,
+    stdio: "ignore"
+  });
+  cdService.on("error", (error) => {
+    console.error("[cd] failed to spawn service:", error.message);
+    cdService = null;
+  });
+  cdService.on("exit", () => {
+    cdService = null;
+  });
+}
+function stopCdService() {
+  if (cdService && !cdService.killed) {
+    cdService.kill();
+  }
+  cdService = null;
 }
 function createWindow() {
   win = new BrowserWindow({
@@ -318,11 +343,13 @@ app.on("activate", () => {
 app.whenReady().then(() => {
   startJukeboxService();
   startBluetoothService();
+  startCdService();
   createWindow();
 });
 app.on("will-quit", () => {
   stopJukeboxService();
   stopBluetoothService();
+  stopCdService();
 });
 export {
   MAIN_DIST,

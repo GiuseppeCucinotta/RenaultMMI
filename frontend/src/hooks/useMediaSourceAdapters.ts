@@ -1,6 +1,7 @@
 import { DEFAULT_SOURCES } from "@/data/media";
 import { useJukeboxContext } from "@/context/jukebox";
 import { useBluetoothContext } from "@/context/bluetooth";
+import { useCdContext } from "@/context/cd";
 import type { MediaSourceAdapter, SourceNowPlaying } from "@/types/media";
 import { useI18n } from "@/i18n";
 import demoArtwork from "@/assets/icons/apps/Music.png";
@@ -26,6 +27,7 @@ export const EMPTY_ADAPTER: MediaSourceAdapter = {
 export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
   const jukebox = useJukeboxContext();
   const bluetooth = useBluetoothContext();
+  const cd = useCdContext();
   const { t } = useI18n();
 
   const jukeboxNowPlaying = (): SourceNowPlaying | null => {
@@ -54,6 +56,32 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
     };
   };
 
+  const cdNowPlaying = (): SourceNowPlaying => {
+    if (!cd.state.hasDisc) {
+      return {
+        sourceId: "cd",
+        sourceName: t("media.sources.cd"),
+        trackTitle: t("media.cd.noDisc"),
+        artistName: null,
+        albumTitle: null,
+        albumArtUrl: null,
+        isPlaying: false,
+      };
+    }
+    const track =
+      cd.state.tracks.find((candidate) => candidate.index === cd.state.currentTrackIndex) ??
+      null;
+    return {
+      sourceId: "cd",
+      sourceName: t("media.sources.cd"),
+      trackTitle: track?.title ?? t("media.cd.noDisc"),
+      artistName: null,
+      albumTitle: cd.state.discTitle,
+      albumArtUrl: null,
+      isPlaying: cd.state.isPlaying,
+    };
+  };
+
   const SOURCE_ADAPTER_FACTORIES: Record<string, () => MediaSourceAdapter> = {
     jukebox: () => ({
       getNowPlaying: jukeboxNowPlaying,
@@ -66,6 +94,12 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
       isActive: () => bluetooth.state.connected && bluetooth.state.track != null,
       togglePlayPause: () => void bluetooth.toggle(),
       skipToNext: () => void bluetooth.next(),
+    }),
+    cd: () => ({
+      getNowPlaying: cdNowPlaying,
+      isActive: () => cd.state.hasDisc && cd.state.currentTrackIndex !== null,
+      togglePlayPause: () => void cd.toggle(),
+      skipToNext: () => void cd.next(),
     }),
   };
 
