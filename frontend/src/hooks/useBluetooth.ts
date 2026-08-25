@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import demoArtwork from "@/assets/icons/apps/Music.png";
 import { IDLE_BLUETOOTH_STATE } from "@/data/bluetooth.mock";
 import {
   bluetoothPlaybackAction,
@@ -113,17 +112,37 @@ export function useBluetooth(): UseBluetoothResult {
         artistName: "",
         trackTitle: noPhoneConnected,
         albumTitle: "",
-        artworkUrl: demoArtwork,
+        artworkUrl: null,
+        artworkStatus: "unknown",
         durationSeconds: 0,
         currentTimeSeconds: 0,
         isPlaying: false,
       };
     }
+    const baseUrl = endpointRef.current;
+    // Older services don't report artworkState; infer from artworkUrl
+    const rawArtworkState =
+      track.artworkState ?? (track.artworkUrl ? "ready" : "none");
+    let artworkUrl: string | null = null;
+    if (rawArtworkState === "ready" && track.artworkUrl) {
+      try {
+        artworkUrl = new URL(track.artworkUrl, baseUrl ?? undefined).toString();
+      } catch {
+        artworkUrl = null;
+      }
+    }
+    const artworkStatus: CurrentPlaybackFeed["artworkStatus"] =
+      rawArtworkState === "ready"
+        ? "ready"
+        : rawArtworkState === "loading"
+          ? "loading"
+          : "unknown";
     return {
       artistName: track.artist ?? "",
       trackTitle: track.title,
       albumTitle: track.album ?? "",
-      artworkUrl: demoArtwork,
+      artworkUrl,
+      artworkStatus,
       durationSeconds: Math.round((state.durationMs ?? 0) / 1000),
       currentTimeSeconds: Math.round(state.positionMs / 1000),
       isPlaying: state.status === "playing",

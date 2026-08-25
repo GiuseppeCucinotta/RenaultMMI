@@ -29,6 +29,8 @@ export interface BluezTrack {
   artist: string | null;
   album: string | null;
   durationMs: number | null;
+  /** AVRCP 1.6 cover art handle (only present when an OBEX BIP session is up) */
+  imgHandle: string | null;
 }
 
 export interface BluezPlayer {
@@ -39,6 +41,8 @@ export interface BluezPlayer {
   track: BluezTrack;
   positionMs: number;
   positionAt: number;
+  /** BIP OBEX port exposed by the phone (experimental BlueZ, AVRCP cover art) */
+  obexPort: number | null;
 }
 
 type ManagedObjects = Record<string, Record<string, Record<string, unknown>>>;
@@ -73,6 +77,7 @@ export class BlueZClient extends EventEmitter {
   private subscribedPaths = new Set<string>();
   private resyncTimer: NodeJS.Timeout | null = null;
   private resyncQueued = false;
+  private warnedNoObex = false;
 
   isAvailable(): boolean {
     return this.available;
@@ -198,7 +203,13 @@ export class BlueZClient extends EventEmitter {
               artist: typeof trackRaw.Artist === "string" ? trackRaw.Artist : null,
               album: typeof trackRaw.Album === "string" ? trackRaw.Album : null,
               durationMs: durationMs > 0 ? durationMs : null,
+              imgHandle:
+                typeof trackRaw.ImgHandle === "string" && trackRaw.ImgHandle
+                  ? trackRaw.ImgHandle
+                  : null,
             },
+            obexPort:
+              typeof playerProps.ObexPort === "number" ? playerProps.ObexPort : null,
             positionMs: nextPositionMs,
             positionAt: samePosition && prev ? prev.positionAt : now,
           });
@@ -228,11 +239,21 @@ export class BlueZClient extends EventEmitter {
           (activePlayer
             ? ` | active player: ${activePlayer.name}` +
               (activePlayer.track.title ? ` | "${activePlayer.track.title}"` : "") +
-              ` | status=${activePlayer.status} pos=${activePlayer.positionMs}ms`
+              ` | status=${activePlayer.status} pos=${activePlayer.positionMs}ms` +
+              (activePlayer.obexPort != null ? ` | obexPort=${activePlayer.obexPort}` : "") +
+              (activePlayer.track.imgHandle ? ` | imgHandle=${activePlayer.track.imgHandle}` : "")
             : activeDevice
               ? ` | device "${activeDevice.alias}" has no MediaPlayer1 (start playback on the phone)`
               : ""),
       );
+      const experimental = Array.from(this.players.values()).some((p) => p.obexPort != null);
+      if (!experimental && this.players.size > 0 && !this.warnedNoObex) {
+        logger.warn(
+          "no player exposes ObexPort -> cover art unavailable " +
+            "(bluetoothd must run with --experimental; reconnect the phone after enabling)",
+        );
+      }
+      this.warnedNoObex = !experimental;
       this.emit("changed");
     } catch (error) {
       if (this.available) {
@@ -366,11 +387,18 @@ export class BlueZClient extends EventEmitter {
           artist: typeof track.Artist === "string" ? track.Artist : null,
           album: typeof track.Album === "string" ? track.Album : null,
           durationMs: durationMs > 0 ? durationMs : null,
+          imgHandle:
+            typeof track.ImgHandle === "string" && track.ImgHandle ? track.ImgHandle : null,
         };
         logger.log(
           `player track -> "${player.track.title}"` +
-            (player.track.artist ? ` by ${player.track.artist}` : ""),
+            (player.track.artist ? ` by ${player.track.artist}` : "") +
+            (player.track.imgHandle ? ` | art handle ${player.track.imgHandle}` : ""),
         );
+      }
+      if (typeof changed.ObexPort === "number") {
+        player.obexPort = changed.ObexPort;
+        logger.log(`player obexPort -> ${changed.ObexPort} (cover art available)`);
       }
       this.emit("changed");
     }

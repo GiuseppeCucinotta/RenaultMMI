@@ -104,6 +104,10 @@ export function MusicApp({
     if (!inPlayer) setShowQueue(false);
   }, [inPlayer]);
 
+  useEffect(() => {
+    if (!isJukebox) setJukeboxMode("library");
+  }, [isJukebox]);
+
   const header = (
     <div className="relative z-[1] flex min-h-[76px] flex-none items-center justify-center px-6">
       {inPlayer ? (

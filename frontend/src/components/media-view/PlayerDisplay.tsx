@@ -13,7 +13,7 @@ export function PlayerDisplay({
   onNext,
   onSeek,
 }: PlayerDisplayProps) {
-  const { artistName, trackTitle, albumTitle, artworkUrl, isPlaying } = playbackFeed;
+  const { artistName, trackTitle, albumTitle, artworkUrl, artworkStatus, isPlaying } = playbackFeed;
   const seekable = onSeek != null && playbackFeed.durationSeconds > 0;
 
   return (
@@ -22,6 +22,7 @@ export function PlayerDisplay({
         <div className="relative flex-none">
           <Artwork
             artworkUrl={artworkUrl}
+            artworkStatus={artworkStatus}
             artistName={artistName}
             trackTitle={trackTitle}
             layoutId={sharedLayoutId}

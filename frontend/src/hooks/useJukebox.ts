@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import demoArtwork from "@/assets/icons/apps/Music.png";
 import {
   IDLE_PLAYBACK_STATE,
   MOCK_LIBRARY,
@@ -299,11 +298,13 @@ export function useJukebox(): UseJukeboxResult {
 
   const playbackFeed = useMemo<CurrentPlaybackFeed | null>(() => {
     if (!state.albumId) return null;
+    const artworkUrl = artworkUrlFor(state.albumId);
     return {
       artistName: state.artistName ?? "",
       trackTitle: state.trackTitle ?? "",
       albumTitle: state.albumTitle ?? "",
-      artworkUrl: artworkUrlFor(state.albumId) ?? demoArtwork,
+      artworkUrl,
+      artworkStatus: artworkUrl ? "ready" : "unknown",
       durationSeconds: state.durationSeconds ?? 0,
       currentTimeSeconds: state.currentTimeSeconds,
       isPlaying: state.isPlaying,

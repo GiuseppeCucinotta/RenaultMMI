@@ -1,11 +1,11 @@
 import type { CurrentPlaybackFeed, MediaSource, SourceFeed } from "@/types/media";
-import demoArtwork from "@/assets/icons/apps/Music.png";
 
 export const DEFAULT_PLAYBACK_FEED: CurrentPlaybackFeed = {
   artistName: "",
   trackTitle: "",
   albumTitle: "",
-  artworkUrl: demoArtwork,
+  artworkUrl: null,
+  artworkStatus: "unknown",
   durationSeconds: 0,
   currentTimeSeconds: 0,
   isPlaying: false,

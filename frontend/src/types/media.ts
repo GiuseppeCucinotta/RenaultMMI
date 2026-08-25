@@ -40,11 +40,14 @@ export interface SourceFeed {
   selectedSourceId: string;
 }
 
+export type ArtworkStatus = "ready" | "loading" | "unknown";
+
 export interface CurrentPlaybackFeed {
   artistName: string;
   trackTitle: string;
   albumTitle: string;
-  artworkUrl: string;
+  artworkUrl: string | null;
+  artworkStatus: ArtworkStatus;
   durationSeconds: number;
   currentTimeSeconds: number;
   isPlaying: boolean;
@@ -55,7 +58,8 @@ export interface WatermarkProps {
 }
 
 export interface ArtworkProps {
-  artworkUrl: string;
+  artworkUrl: string | null;
+  artworkStatus: ArtworkStatus;
   artistName: string;
   trackTitle: string;
   layoutId?: string;

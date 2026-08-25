@@ -45,9 +45,47 @@ ipcMain.handle('entertainment:set-volume', (_event, payload: { volume?: unknown 
   return Number.isFinite(volume) ? entertainment.setVolume(volume) : entertainment.getState()
 })
 
-ipcMain.handle('entertainment:set-source', (_event, payload: { sourceId?: unknown }) => {
+function sendPlaybackStop(port: string): Promise<void> {
+  return new Promise((resolve) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 2000)
+    fetch(`http://127.0.0.1:${port}/api/playback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'stop' }),
+      signal: controller.signal,
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(timer)
+        resolve()
+      })
+  })
+}
+
+ipcMain.handle('entertainment:set-source', async (_event, payload: { sourceId?: unknown }) => {
   const sourceId = typeof payload?.sourceId === 'string' ? payload.sourceId : ''
-  return sourceId ? entertainment.setActiveSource(sourceId) : entertainment.getState()
+  if (!sourceId) return entertainment.getState()
+
+  const previous = entertainment.getState().activeSourceId
+  if (sourceId === previous) return entertainment.getState()
+
+  // Stop whatever is playing on the outgoing source before switching.
+  if (previous === 'jukebox') {
+    await sendPlaybackStop(JUKEBOX_PORT)
+  } else if (previous === 'bluetooth') {
+    await sendPlaybackStop(BLUETOOTH_PORT)
+    stopBluetoothService()
+  }
+
+  // Guarantee the incoming source's service is up (bluetooth always restarts).
+  if (sourceId === 'bluetooth') {
+    startBluetoothService()
+  } else if (sourceId === 'jukebox') {
+    startJukeboxService()
+  }
+
+  return entertainment.setActiveSource(sourceId)
 })
 
 ipcMain.handle('get-app-info', () => ({

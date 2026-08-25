@@ -106,6 +106,9 @@ export class JukeboxPlayer extends EventEmitter {
   }
 
   async playAlbum(albumId: string): Promise<void> {
+    if (!this.mpv || !this.mpv.isRunning()) {
+      await this.start();
+    }
     const mpv = this.requireMpv();
     const album = this.library ? findAlbum(this.library, albumId) : null;
     if (!album || album.songs.length === 0) {
@@ -186,14 +189,21 @@ export class JukeboxPlayer extends EventEmitter {
   }
 
   async stop(): Promise<void> {
-    const mpv = this.requireMpv();
-    await mpv.stop();
+    const mpv = this.mpv;
+    if (mpv?.isRunning()) {
+      try {
+        await mpv.stop();
+      } catch {
+        // mpv already gone — nothing to stop
+      }
+    }
     this.albumId = null;
     this.trackIndex = 0;
     this.currentTimeSeconds = 0;
     this.durationSeconds = 0;
     this.isPlaying = false;
     this.emitState();
+    await this.quit();
   }
 
   getState(): JukeboxPlaybackState {

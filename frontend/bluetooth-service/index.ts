@@ -1,13 +1,15 @@
 import { resolveConfig } from "./config.js";
 import { BlueZClient } from "./bluez.js";
 import { BluetoothPlayer } from "./player.js";
+import { ArtworkService } from "./artwork.js";
 import { createServer } from "./server.js";
 import { logger } from "./logger.js";
 
 async function main(): Promise<void> {
   const config = resolveConfig();
   const bluez = new BlueZClient();
-  const player = new BluetoothPlayer(bluez);
+  const artwork = new ArtworkService(bluez, config.artworkDir);
+  const player = new BluetoothPlayer(bluez, artwork);
   const { server } = createServer(config, bluez, player);
 
   server.listen(config.port, "127.0.0.1", () => {
@@ -16,9 +18,10 @@ async function main(): Promise<void> {
 
   try {
     await player.start();
+    await artwork.start();
   } catch (error) {
     logger.error(
-      "BlueZ unavailable (staying up so /api/health can report it):",
+      "startup error (staying up so /api/health can report it):",
       error instanceof Error ? error.message : error,
     );
   }

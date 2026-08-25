@@ -5,6 +5,10 @@ export interface BluetoothTrack {
   artist: string | null;
   album: string | null;
   durationMs: number | null;
+  /** Absolute or service-relative URL of the cover art, if downloaded */
+  artworkUrl?: string | null;
+  /** Cover art availability for the current track */
+  artworkState?: "none" | "loading" | "ready";
 }
 
 export interface BluetoothState {

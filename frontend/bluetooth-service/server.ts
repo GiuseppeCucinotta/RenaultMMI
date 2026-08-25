@@ -1,4 +1,6 @@
 import http from "node:http";
+import fsp from "node:fs/promises";
+import path from "node:path";
 import type { BluetoothConfig } from "./config.js";
 import type { BluetoothPlaybackAction, BluetoothState } from "./types.js";
 import { BlueZClient } from "./bluez.js";
@@ -134,6 +136,31 @@ export function createServer(
         case "events":
           handleEvents(req, res);
           break;
+
+        case "artwork": {
+          if (req.method !== "GET") {
+            sendJson(res, 405, { error: "GET required" });
+            break;
+          }
+          const name = parts[2] ?? "";
+          if (!/^[A-Za-z0-9_-]+\.jpg$/.test(name)) {
+            sendNotFound(res);
+            break;
+          }
+          try {
+            const data = await fsp.readFile(path.join(config.artworkDir, name));
+            res.writeHead(200, {
+              "Content-Type": "image/jpeg",
+              "Content-Length": data.length,
+              "Cache-Control": "max-age=86400",
+              ...CORS_HEADERS,
+            });
+            res.end(data);
+          } catch {
+            sendNotFound(res);
+          }
+          break;
+        }
 
         default:
           sendNotFound(res);

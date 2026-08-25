@@ -137,9 +137,38 @@ ipcMain.handle("entertainment:set-volume", (_event, payload) => {
   const volume = Number(payload?.volume);
   return Number.isFinite(volume) ? entertainment.setVolume(volume) : entertainment.getState();
 });
-ipcMain.handle("entertainment:set-source", (_event, payload) => {
+function sendPlaybackStop(port) {
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2e3);
+    fetch(`http://127.0.0.1:${port}/api/playback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+      signal: controller.signal
+    }).catch(() => void 0).finally(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+ipcMain.handle("entertainment:set-source", async (_event, payload) => {
   const sourceId = typeof payload?.sourceId === "string" ? payload.sourceId : "";
-  return sourceId ? entertainment.setActiveSource(sourceId) : entertainment.getState();
+  if (!sourceId) return entertainment.getState();
+  const previous = entertainment.getState().activeSourceId;
+  if (sourceId === previous) return entertainment.getState();
+  if (previous === "jukebox") {
+    await sendPlaybackStop(JUKEBOX_PORT);
+  } else if (previous === "bluetooth") {
+    await sendPlaybackStop(BLUETOOTH_PORT);
+    stopBluetoothService();
+  }
+  if (sourceId === "bluetooth") {
+    startBluetoothService();
+  } else if (sourceId === "jukebox") {
+    startJukeboxService();
+  }
+  return entertainment.setActiveSource(sourceId);
 });
 ipcMain.handle("get-app-info", () => ({
   name: app.getName(),

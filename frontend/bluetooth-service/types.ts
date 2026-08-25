@@ -1,10 +1,16 @@
 export type BluetoothStatus = "playing" | "paused" | "stopped" | "none";
 
+export type ArtworkState = "none" | "loading" | "ready";
+
 export interface BluetoothTrack {
   title: string | null;
   artist: string | null;
   album: string | null;
   durationMs: number | null;
+  /** Relative URL of the downloaded cover art, set only when ready */
+  artworkUrl: string | null;
+  /** Cover art availability for the current track */
+  artworkState: ArtworkState;
 }
 
 export interface BluetoothState {

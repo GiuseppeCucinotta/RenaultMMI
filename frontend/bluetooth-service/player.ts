@@ -1,7 +1,13 @@
 import { EventEmitter } from "node:events";
-import type { BluetoothPlaybackAction, BluetoothState, BluetoothStatus } from "./types.js";
+import type {
+  ArtworkState,
+  BluetoothPlaybackAction,
+  BluetoothState,
+  BluetoothStatus,
+} from "./types.js";
 import { IDLE_BLUETOOTH_STATE } from "./types.js";
-import { BlueZClient } from "./bluez.js";
+import type { BlueZClient } from "./bluez.js";
+import type { ArtworkService } from "./artwork.js";
 import { setBluetoothVolume } from "./volume.js";
 import { logger } from "./logger.js";
 
@@ -23,6 +29,7 @@ function toStatus(raw: string): BluetoothStatus {
  */
 export class BluetoothPlayer extends EventEmitter {
   private readonly bluez: BlueZClient;
+  private readonly artwork: ArtworkService | null;
   private state: BluetoothState = IDLE_BLUETOOTH_STATE;
   private status: BluetoothStatus = "none";
   private positionMs = 0;
@@ -30,10 +37,14 @@ export class BluetoothPlayer extends EventEmitter {
   private lastVolumePercent: number | null = null;
   private tickTimer: NodeJS.Timeout | null = null;
 
-  constructor(bluez: BlueZClient) {
+  constructor(bluez: BlueZClient, artwork?: ArtworkService) {
     super();
     this.bluez = bluez;
+    this.artwork = artwork ?? null;
     this.bluez.on("changed", () => this.refresh());
+    if (this.artwork) {
+      this.artwork.on("downloaded", () => this.refresh());
+    }
     this.bluez.on("device-connected", () => {
       if (this.lastVolumePercent != null) void this.setVolume(this.lastVolumePercent);
     });
@@ -125,16 +136,35 @@ export class BluetoothPlayer extends EventEmitter {
     }
 
     const track = player?.track ?? null;
+    const artworkState: ArtworkState =
+      track?.imgHandle == null
+        ? "none"
+        : this.artwork?.isAvailable(track.imgHandle)
+          ? "ready"
+          : "loading";
     const hasTrack =
       track != null &&
-      (track.title != null || track.artist != null || track.album != null || track.durationMs != null);
+      (track.title != null ||
+        track.artist != null ||
+        track.album != null ||
+        track.durationMs != null ||
+        artworkState !== "none");
 
     const next: BluetoothState = {
       connected: device != null,
       deviceName: device?.alias ?? null,
       deviceAddress: device?.address ?? null,
       status: this.status,
-      track: hasTrack ? track : null,
+      track: hasTrack
+        ? {
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            durationMs: track.durationMs,
+            artworkUrl: artworkState === "ready" ? `/api/artwork/${track.imgHandle}.jpg` : null,
+            artworkState,
+          }
+        : null,
       positionMs: Math.round(this.positionMs),
       durationMs: track?.durationMs ?? null,
     };
@@ -167,7 +197,9 @@ export class BluetoothPlayer extends EventEmitter {
       prev.track?.title !== next.track?.title ||
       prev.track?.artist !== next.track?.artist ||
       prev.track?.album !== next.track?.album ||
-      prev.track?.durationMs !== next.track?.durationMs;
+      prev.track?.durationMs !== next.track?.durationMs ||
+      prev.track?.artworkUrl !== next.track?.artworkUrl ||
+      prev.track?.artworkState !== next.track?.artworkState;
     this.state = next;
     this.emit("state", next);
     return changed;
