@@ -23,11 +23,14 @@ function percentFromEntertainment(volume: number): number {
  * so unrelated sounds (parking sensors, alerts, navigation, ...) keep their own
  * independent volume. Every real source registers its own stream backend below.
  */
-class JukeboxVolumeBackend implements VolumeBackend {
+class ServiceVolumeBackend implements VolumeBackend {
   private readonly baseUrl: string
 
-  constructor(jukeboxPort: number) {
-    this.baseUrl = `http://127.0.0.1:${jukeboxPort}`
+  constructor(
+    private readonly label: string,
+    port: number,
+  ) {
+    this.baseUrl = `http://127.0.0.1:${port}`
   }
 
   async apply(percent: number): Promise<void> {
@@ -38,27 +41,7 @@ class JukeboxVolumeBackend implements VolumeBackend {
         body: JSON.stringify({ volume: percent }),
       })
     } catch (error) {
-      console.error('[entertainment] failed to set jukebox volume:', error instanceof Error ? error.message : error)
-    }
-  }
-}
-
-class BluetoothVolumeBackend implements VolumeBackend {
-  private readonly baseUrl: string
-
-  constructor(bluetoothPort: number) {
-    this.baseUrl = `http://127.0.0.1:${bluetoothPort}`
-  }
-
-  async apply(percent: number): Promise<void> {
-    try {
-      await fetch(`${this.baseUrl}/api/volume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ volume: percent }),
-      })
-    } catch (error) {
-      console.error('[entertainment] failed to set bluetooth volume:', error instanceof Error ? error.message : error)
+      console.error(`[entertainment] failed to set ${this.label} volume:`, error instanceof Error ? error.message : error)
     }
   }
 }
@@ -90,8 +73,8 @@ export class EntertainmentVolumeController extends EventEmitter {
     this.activeSourceId = options.defaultSourceId
     this.defaultBackend = new NoopVolumeBackend()
     this.sourceBackends = {
-      jukebox: new JukeboxVolumeBackend(options.jukeboxPort),
-      bluetooth: new BluetoothVolumeBackend(options.bluetoothPort),
+      jukebox: new ServiceVolumeBackend('jukebox', options.jukeboxPort),
+      bluetooth: new ServiceVolumeBackend('bluetooth', options.bluetoothPort),
     }
   }
 

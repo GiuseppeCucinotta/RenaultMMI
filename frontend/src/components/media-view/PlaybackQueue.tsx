@@ -15,6 +15,16 @@ function formatDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function ensureRowVisible(list: HTMLDivElement, row: HTMLElement): void {
+  const rowRect = row.getBoundingClientRect();
+  const listRect = list.getBoundingClientRect();
+  if (rowRect.top < listRect.top) {
+    list.scrollTop -= listRect.top - rowRect.top;
+  } else if (rowRect.bottom > listRect.bottom) {
+    list.scrollTop += rowRect.bottom - listRect.bottom;
+  }
+}
+
 function NowPlayingBars({ isPlaying }: { isPlaying: boolean }) {
   return (
     <div className="flex h-[18px] items-end gap-[3px]" aria-hidden="true">
@@ -56,13 +66,7 @@ export function PlaybackQueue({
     const row = currentRowRef.current;
     const list = listRef.current;
     if (!row || !list) return;
-    const rowRect = row.getBoundingClientRect();
-    const listRect = list.getBoundingClientRect();
-    if (rowRect.top < listRect.top) {
-      list.scrollTop -= listRect.top - rowRect.top;
-    } else if (rowRect.bottom > listRect.bottom) {
-      list.scrollTop += rowRect.bottom - listRect.bottom;
-    }
+    ensureRowVisible(list, row);
   }, [album.id, currentTrackIndex]);
 
   useEffect(() => {
@@ -71,13 +75,7 @@ export function PlaybackQueue({
     const onFocusIn = () => {
       const row = list.querySelector<HTMLElement>("button:focus");
       if (!row) return;
-      const rowRect = row.getBoundingClientRect();
-      const listRect = list.getBoundingClientRect();
-      if (rowRect.top < listRect.top) {
-        list.scrollTop -= listRect.top - rowRect.top;
-      } else if (rowRect.bottom > listRect.bottom) {
-        list.scrollTop += rowRect.bottom - listRect.bottom;
-      }
+      ensureRowVisible(list, row);
     };
     list.addEventListener("focusin", onFocusIn);
     return () => list.removeEventListener("focusin", onFocusIn);

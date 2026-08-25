@@ -3,9 +3,9 @@ import type {
   JukeboxPlaybackAction,
   JukeboxPlaybackState,
 } from "@/types/jukebox";
+import { checkServiceHealth } from "@/services/health";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4100";
-const HEALTH_TIMEOUT_MS = 1200;
 
 export async function getJukeboxEndpoint(): Promise<string> {
   try {
@@ -21,21 +21,7 @@ export function jukeboxArtworkUrl(baseUrl: string, albumId: string): string {
   return `${baseUrl}/api/artwork/${albumId}`;
 }
 
-export async function checkJukeboxHealth(
-  baseUrl: string,
-  timeoutMs = HEALTH_TIMEOUT_MS,
-): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`${baseUrl}/api/health`, { signal: controller.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
+export const checkJukeboxHealth = checkServiceHealth;
 
 export async function fetchJukeboxLibrary(baseUrl: string): Promise<JukeboxLibrary> {
   const response = await fetch(`${baseUrl}/api/library`);

@@ -112,40 +112,6 @@
   --sidebar-ring: var(--amber-500);
 }
 
-.dark {
-  --background: var(--amber-950);
-  --foreground: var(--amber-50);
-  --card: var(--amber-950);
-  --card-foreground: var(--amber-50);
-  --popover: var(--amber-950);
-  --popover-foreground: var(--amber-50);
-  --primary: var(--amber-500);
-  --primary-foreground: var(--amber-950);
-  --secondary: var(--amber-800);
-  --secondary-foreground: var(--amber-50);
-  --muted: var(--amber-900);
-  --muted-foreground: var(--amber-300);
-  --accent: var(--amber-600);
-  --accent-foreground: var(--amber-50);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: var(--amber-700);
-  --input: var(--amber-700);
-  --ring: var(--amber-500);
-  --chart-1: var(--amber-300);
-  --chart-2: var(--amber-400);
-  --chart-3: var(--amber-500);
-  --chart-4: var(--amber-200);
-  --chart-5: var(--amber-600);
-  --sidebar: var(--amber-950);
-  --sidebar-foreground: var(--amber-50);
-  --sidebar-primary: var(--amber-500);
-  --sidebar-primary-foreground: var(--amber-950);
-  --sidebar-accent: var(--amber-800);
-  --sidebar-accent-foreground: var(--amber-50);
-  --sidebar-border: var(--amber-700);
-  --sidebar-ring: var(--amber-500);
-}
-
 @layer base {
   * {
     @apply border-border;

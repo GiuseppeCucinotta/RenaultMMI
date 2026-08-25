@@ -11,6 +11,7 @@ import {
 } from "./library.js";
 import { JukeboxPlayer } from "./player.js";
 import { loadLibrary, saveLibrary, scanLibrary } from "./scanner.js";
+import { CORS_HEADERS, createSseHub, readJsonBody, sendJson, sendNotFound } from "../shared/service-http.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -20,44 +21,9 @@ const MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 export interface JukeboxServer {
   server: http.Server;
   player: JukeboxPlayer;
-}
-
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    ...CORS_HEADERS,
-  });
-  res.end(JSON.stringify(body));
-}
-
-function sendNotFound(res: http.ServerResponse): void {
-  sendJson(res, 404, { error: "Not found" });
-}
-
-function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk: Buffer) => {
-      data += chunk;
-    });
-    req.on("end", () => {
-      try {
-        resolve(data ? (JSON.parse(data) as Record<string, unknown>) : {});
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error("Invalid JSON body"));
-      }
-    });
-    req.on("error", reject);
-  });
 }
 
 export async function createServer(config: JukeboxConfig): Promise<JukeboxServer> {
@@ -65,15 +31,8 @@ export async function createServer(config: JukeboxConfig): Promise<JukeboxServer
   const player = new JukeboxPlayer(config.musicRoot, config.mpvBinary);
   player.setLibrary(library);
 
-  const sseClients = new Set<http.ServerResponse>();
-
-  const broadcast = (state: JukeboxPlaybackState): void => {
-    const payload = `data: ${JSON.stringify(state)}\n\n`;
-    for (const client of sseClients) {
-      client.write(payload);
-    }
-  };
-  player.on("state", broadcast);
+  const sse = createSseHub<JukeboxPlaybackState>();
+  player.on("state", (state) => sse.broadcast(state));
 
   const requestScan = async (): Promise<JukeboxLibrary> => {
     library = await scanLibrary(config.musicRoot, config.artworkCacheDir);
@@ -267,17 +226,7 @@ export async function createServer(config: JukeboxConfig): Promise<JukeboxServer
   }
 
   function handleEvents(req: http.IncomingMessage, res: http.ServerResponse): void {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      ...CORS_HEADERS,
-    });
-    res.write(`data: ${JSON.stringify(player.getState())}\n\n`);
-    sseClients.add(res);
-    req.on("close", () => {
-      sseClients.delete(res);
-    });
+    sse.addClient(req, res, player.getState());
   }
 
   return { server, player };

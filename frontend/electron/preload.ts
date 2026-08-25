@@ -1,4 +1,5 @@
 import { ipcRenderer, contextBridge } from "electron";
+import type { SystemInfo } from "../shared/system-info";
 
 interface IpcRendererLike {
   on(channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void): void;
@@ -8,24 +9,6 @@ interface IpcRendererLike {
   node: () => string;
   chrome: () => string;
   electron: () => string;
-}
-
-interface SystemInfo {
-  node: string;
-  chrome: string;
-  electron: string;
-  platform: string;
-  arch: string;
-  cpu: {
-    percent: number;
-  };
-  memory: {
-    rss: number;
-    heapUsed: number;
-    systemTotal: number;
-    percent: number;
-  };
-  uptime: number;
 }
 
 interface AppInfo {

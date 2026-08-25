@@ -2,9 +2,9 @@ import type {
   BluetoothPlaybackAction,
   BluetoothState,
 } from "@/types/bluetooth";
+import { checkServiceHealth } from "@/services/health";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4200";
-const HEALTH_TIMEOUT_MS = 1200;
 
 export async function getBluetoothEndpoint(): Promise<string> {
   try {
@@ -16,21 +16,7 @@ export async function getBluetoothEndpoint(): Promise<string> {
   return DEFAULT_BASE_URL;
 }
 
-export async function checkBluetoothHealth(
-  baseUrl: string,
-  timeoutMs = HEALTH_TIMEOUT_MS,
-): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`${baseUrl}/api/health`, { signal: controller.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
+export const checkBluetoothHealth = checkServiceHealth;
 
 export async function fetchBluetoothState(baseUrl: string): Promise<BluetoothState> {
   const response = await fetch(`${baseUrl}/api/state`);
