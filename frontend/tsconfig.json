@@ -24,6 +24,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "electron", "jukebox-service", "bluetooth-service", "cd-service", "shared"],
+  "include": ["src", "electron", "jukebox-service", "bluetooth-service", "cd-service", "shared", "test"],
   "references": [{ "path": "./tsconfig.node.json" }],
 }

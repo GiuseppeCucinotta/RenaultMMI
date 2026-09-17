@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createUdpProbe } from './udp-probe'
+import { watchDevArtifacts } from './dev-watch'
 import { EntertainmentVolumeController, type EntertainmentVolumeState } from './entertainment-audio'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -34,6 +35,17 @@ const entertainment = new EntertainmentVolumeController({
   bluetoothPort: Number(BLUETOOTH_PORT),
   cdPort: Number(CD_PORT),
   defaultSourceId: 'bluetooth',
+  setSourceSuspended: async (sourceId, suspended) => {
+    const services: Record<string, { port: string; start: () => void }> = {
+      jukebox: { port: JUKEBOX_PORT, start: startJukeboxService },
+      bluetooth: { port: BLUETOOTH_PORT, start: startBluetoothService },
+      cd: { port: CD_PORT, start: startCdService },
+    }
+    const service = services[sourceId]
+    if (!service) return
+    if (!suspended) service.start()
+    await setServiceSuspended(service.port, suspended)
+  },
 })
 
 function broadcastEntertainmentState(state: EntertainmentVolumeState) {
@@ -49,51 +61,49 @@ ipcMain.handle('entertainment:set-volume', (_event, payload: { volume?: unknown 
   return Number.isFinite(volume) ? entertainment.setVolume(volume) : entertainment.getState()
 })
 
-function sendPlaybackStop(port: string): Promise<void> {
-  return new Promise((resolve) => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 2000)
-    fetch(`http://127.0.0.1:${port}/api/playback`, {
+async function postSuspended(port: string, suspended: boolean): Promise<void> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10000)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'stop' }),
+      body: JSON.stringify({ suspended }),
       signal: controller.signal,
     })
-      .catch(() => undefined)
-      .finally(() => {
-        clearTimeout(timer)
-        resolve()
-      })
-  })
+    if (!response.ok) throw new Error(`Service on port ${port} returned ${response.status}`)
+    await response.arrayBuffer()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
-ipcMain.handle('entertainment:set-source', async (_event, payload: { sourceId?: unknown }) => {
+/**
+ * Waking a source has to survive a service that is still binding its port
+ * (first start) or briefly unavailable — otherwise the switch aborts and the
+ * source the user selected stays suspended (a blank media screen). Putting a
+ * source to sleep, on the other hand, is attempted once: a service that is
+ * down must not delay the switch we are actually making.
+ */
+async function setServiceSuspended(port: string, suspended: boolean): Promise<void> {
+  const attempts = suspended ? 1 : 4
+  let lastError: unknown = new Error(`Service on port ${port} did not answer`)
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await postSuspended(port, suspended)
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+  }
+  throw lastError
+}
+
+ipcMain.handle('entertainment:set-source', (_event, payload: { sourceId?: unknown }) => {
   const sourceId = typeof payload?.sourceId === 'string' ? payload.sourceId : ''
-  if (!sourceId) return entertainment.getState()
-
-  const previous = entertainment.getState().activeSourceId
-  if (sourceId === previous) return entertainment.getState()
-
-  // Stop whatever is playing on the outgoing source before switching.
-  if (previous === 'jukebox') {
-    await sendPlaybackStop(JUKEBOX_PORT)
-  } else if (previous === 'bluetooth') {
-    await sendPlaybackStop(BLUETOOTH_PORT)
-    stopBluetoothService()
-  } else if (previous === 'cd') {
-    await sendPlaybackStop(CD_PORT)
-  }
-
-  // Guarantee the incoming source's service is up (bluetooth always restarts).
-  if (sourceId === 'bluetooth') {
-    startBluetoothService()
-  } else if (sourceId === 'jukebox') {
-    startJukeboxService()
-  } else if (sourceId === 'cd') {
-    startCdService()
-  }
-
-  return entertainment.setActiveSource(sourceId)
+  return sourceId ? entertainment.setActiveSource(sourceId) : entertainment.getState()
 })
 
 ipcMain.handle('get-app-info', () => ({
@@ -220,6 +230,64 @@ function stopCdService() {
   cdService = null
 }
 
+/** A dev rebuild must not race the old child for the port: wait for its exit. */
+function restartService(name: string, child: ChildProcess | null, start: () => void) {
+  console.log(`[dev] ${name} changed — restarting the service`)
+  if (!child || child.killed) {
+    start()
+    return
+  }
+  const force = setTimeout(() => child.kill('SIGKILL'), 3000)
+  force.unref()
+  child.once('exit', () => {
+    clearTimeout(force)
+    start()
+  })
+  child.kill()
+}
+
+function relaunchApp() {
+  console.log('[dev] main process changed — relaunching the app')
+  app.relaunch()
+  app.quit()
+}
+
+/**
+ * Dev-only: vite-plugin-electron rebuilds the bundles on every edit but only
+ * reloads the renderer, so the Electron main process and the spawned services
+ * would otherwise keep running the previous code until the app is restarted.
+ * Restarting `main.js` reloads the whole app; each service bundle restarts just
+ * that child process (the renderer reconnects to it through SSE).
+ */
+function watchDevBundles() {
+  if (!VITE_DEV_SERVER_URL) return
+
+  const serviceTarget = (name: string, child: () => ChildProcess | null, start: () => void) => ({
+    name,
+    path: path.join(MAIN_DIST, name),
+    match: (file: string) => file === 'index.js',
+    onChange: () => restartService(name, child(), start),
+  })
+
+  watchDevArtifacts(
+    [
+      {
+        name: 'main',
+        path: MAIN_DIST,
+        match: (file: string) => file === 'main.js',
+        onChange: relaunchApp,
+      },
+      serviceTarget('jukebox', () => jukeboxService, startJukeboxService),
+      serviceTarget('bluetooth', () => bluetoothService, startBluetoothService),
+      serviceTarget('cd', () => cdService, startCdService),
+    ],
+    {
+      onError: (name, error) =>
+        console.error(`[dev] cannot watch ${name}:`, error instanceof Error ? error.message : error),
+    },
+  )
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1920,
@@ -310,6 +378,7 @@ app.whenReady().then(() => {
   startJukeboxService()
   startBluetoothService()
   startCdService()
+  watchDevBundles()
   createWindow()
 })
 

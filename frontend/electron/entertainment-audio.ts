@@ -67,10 +67,20 @@ export class EntertainmentVolumeController extends EventEmitter {
   private readonly defaultBackend: VolumeBackend
   private readonly sourceBackends: Record<string, VolumeBackend>
 
-  constructor(options: { jukeboxPort: number; bluetoothPort: number; cdPort: number; defaultSourceId: string }) {
+  private operations: Promise<unknown> = Promise.resolve()
+  private readonly setSourceSuspended: (sourceId: string, suspended: boolean) => Promise<void>
+
+  constructor(options: {
+    jukeboxPort: number
+    bluetoothPort: number
+    cdPort: number
+    defaultSourceId: string
+    setSourceSuspended: (sourceId: string, suspended: boolean) => Promise<void>
+  }) {
     super()
     this.volume = VOLUME_DEFAULT
     this.activeSourceId = options.defaultSourceId
+    this.setSourceSuspended = options.setSourceSuspended
     this.defaultBackend = new NoopVolumeBackend()
     this.sourceBackends = {
       jukebox: new ServiceVolumeBackend('jukebox', options.jukeboxPort),
@@ -85,16 +95,50 @@ export class EntertainmentVolumeController extends EventEmitter {
 
   setVolume(volume: number): EntertainmentVolumeState {
     this.volume = Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, Math.round(volume)))
-    void this.applyVolume()
+    void this.enqueue(() => this.applyVolume())
     this.emit('state', this.getState())
     return this.getState()
   }
 
-  setActiveSource(sourceId: string): EntertainmentVolumeState {
-    this.activeSourceId = sourceId
-    void this.applyVolume()
-    this.emit('state', this.getState())
-    return this.getState()
+  setActiveSource(sourceId: string): Promise<EntertainmentVolumeState> {
+    return this.enqueue(async () => {
+      const previous = this.activeSourceId
+      if (sourceId === previous) return this.getState()
+
+      // Suspending the outgoing source is best effort: a service that is down
+      // must never block the source the user is switching TO.
+      try {
+        await this.setSourceSuspended(previous, true)
+      } catch (error) {
+        console.error(
+          `[entertainment] failed to suspend ${previous}:`,
+          error instanceof Error ? error.message : error,
+        )
+      }
+
+      try {
+        await this.setSourceSuspended(sourceId, false)
+      } catch (error) {
+        // Not fatal: any mutating request wakes a suspended service, so the
+        // first command from the UI recovers. Committing the switch keeps
+        // main and the renderer in agreement about the active source.
+        console.error(
+          `[entertainment] failed to wake ${sourceId}:`,
+          error instanceof Error ? error.message : error,
+        )
+      }
+
+      this.activeSourceId = sourceId
+      await this.applyVolume()
+      this.emit('state', this.getState())
+      return this.getState()
+    })
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operations.then(operation)
+    this.operations = result.catch(() => undefined)
+    return result
   }
 
   private async applyVolume(): Promise<void> {

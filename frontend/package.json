@@ -9,6 +9,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "tsx": "tsx",
+    "test": "node --import tsx --test test/*.test.ts",
     "bluetooth:debug": "tsx bluetooth-service/index.ts",
     "cd:debug": "tsx cd-service/index.ts"
   },
