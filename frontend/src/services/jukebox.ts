@@ -38,11 +38,12 @@ export async function requestJukeboxScan(baseUrl: string): Promise<JukeboxLibrar
 export async function jukeboxPlay(
   baseUrl: string,
   albumId: string,
+  options: { paused?: boolean } = {},
 ): Promise<JukeboxPlaybackState> {
   const response = await fetch(`${baseUrl}/api/play`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ albumId }),
+    body: JSON.stringify(options.paused ? { albumId, paused: true } : { albumId }),
   });
   if (!response.ok) throw new Error(`Play failed (${response.status})`);
   return (await response.json()) as JukeboxPlaybackState;

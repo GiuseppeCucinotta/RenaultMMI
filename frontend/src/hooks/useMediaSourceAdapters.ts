@@ -2,11 +2,22 @@ import { DEFAULT_SOURCES } from "@/data/media";
 import { useJukeboxContext } from "@/context/jukebox";
 import { useBluetoothContext } from "@/context/bluetooth";
 import { useCdContext } from "@/context/cd";
-import type { MediaSourceAdapter, SourceNowPlaying } from "@/types/media";
+import type { ArtworkStatus, MediaSourceAdapter, SourceNowPlaying } from "@/types/media";
+import type { BluetoothTrack } from "@/types/bluetooth";
 import { useI18n } from "@/i18n";
 import demoArtwork from "@/assets/icons/apps/Music.png";
 
 const NOOP = (): void => undefined;
+
+/**
+ * Bridges the Bluetooth-specific artwork lifecycle onto the generic
+ * `ArtworkStatus` contract consumed by the now-playing hub.
+ */
+function artworkStatusFrom(state: BluetoothTrack["artworkState"]): ArtworkStatus {
+  if (state === "ready") return "ready";
+  if (state === "loading") return "loading";
+  return "unknown";
+}
 
 export const EMPTY_ADAPTER: MediaSourceAdapter = {
   getNowPlaying: () => null,
@@ -32,19 +43,23 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
 
   const jukeboxNowPlaying = (): SourceNowPlaying | null => {
     if (!jukebox.state.albumId) return null;
+    const albumArtUrl = jukebox.artworkUrlFor(jukebox.state.albumId) ?? demoArtwork;
     return {
       sourceId: "jukebox",
       sourceName: t("media.sources.jukebox"),
       trackTitle: jukebox.state.trackTitle,
       artistName: jukebox.state.artistName,
       albumTitle: jukebox.state.albumTitle,
-      albumArtUrl: jukebox.artworkUrlFor(jukebox.state.albumId) ?? demoArtwork,
+      albumArtUrl,
+      artworkStatus: "ready",
       isPlaying: jukebox.state.isPlaying,
     };
   };
 
   const bluetoothNowPlaying = (): SourceNowPlaying => {
-    const track = bluetooth.state.track;
+    // Bluetooth media belongs to the active phone: no phone, no player.
+    const { media } = bluetooth.state;
+    const track = media.track;
     return {
       sourceId: "bluetooth",
       sourceName: t("media.sources.bluetooth"),
@@ -52,7 +67,8 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
       artistName: track?.artist ?? null,
       albumTitle: track?.album ?? null,
       albumArtUrl: null,
-      isPlaying: bluetooth.state.status === "playing",
+      artworkStatus: artworkStatusFrom(track?.artworkState ?? "none"),
+      isPlaying: media.status === "playing",
     };
   };
 
@@ -65,6 +81,7 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
         artistName: null,
         albumTitle: null,
         albumArtUrl: null,
+        artworkStatus: "unknown",
         isPlaying: false,
       };
     }
@@ -78,6 +95,7 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
       artistName: null,
       albumTitle: cd.state.discTitle,
       albumArtUrl: null,
+      artworkStatus: "unknown",
       isPlaying: cd.state.isPlaying,
     };
   };
@@ -91,7 +109,7 @@ export function useMediaSourceAdapters(): Record<string, MediaSourceAdapter> {
     }),
     bluetooth: () => ({
       getNowPlaying: bluetoothNowPlaying,
-      isActive: () => bluetooth.state.connected && bluetooth.state.track != null,
+      isActive: () => bluetooth.state.media.deviceId != null && bluetooth.state.media.track != null,
       togglePlayPause: () => void bluetooth.toggle(),
       skipToNext: () => void bluetooth.next(),
     }),

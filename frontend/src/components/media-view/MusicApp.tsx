@@ -16,8 +16,6 @@ import { PlaybackQueue } from "./PlaybackQueue";
 import { SHARED_ART_ID } from "./CoverFlowItem";
 import { useI18n } from "@/i18n";
 
-type JukeboxMode = "library" | "player";
-
 const BODY_TRANSITION = { duration: 0.22, ease: "easeInOut" as const };
 
 const PLAYER_ROTARY_SELECTOR = "button, [role='button'], [tabindex='0']";
@@ -35,14 +33,23 @@ export function MusicApp({
   const jukebox = useJukeboxContext();
   const bluetooth = useBluetoothContext();
   const { t } = useI18n();
-  const [jukeboxMode, setJukeboxMode] = useState<JukeboxMode>("library");
+  const { viewMode: jukeboxMode, setViewMode: setJukeboxMode } = jukebox;
   const [showQueue, setShowQueue] = useState(false);
   const isJukebox = sourceFeed.selectedSourceId === "jukebox";
   const isBluetooth = sourceFeed.selectedSourceId === "bluetooth";
+  const hasAlbum = jukebox.state.albumId != null;
+
+  /**
+   * The player view needs an album. Without one it would render an empty
+   * screen (no track, album or artist), which is what happened whenever the
+   * service came back without its snapshot — so an album-less player falls
+   * back to the library instead.
+   */
+  const inPlayer = isJukebox && jukeboxMode === "player" && hasAlbum;
 
   const playerRotary = useRotaryNavigation({
     selector: showQueue ? QUEUE_ROTARY_SELECTOR : PLAYER_ROTARY_SELECTOR,
-    enabled: isJukebox && jukeboxMode === "player",
+    enabled: inPlayer,
   });
   const { containerRef, focusElement } = playerRotary;
 
@@ -72,7 +79,7 @@ export function MusicApp({
         if (started) setJukeboxMode("player");
       });
     },
-    [jukebox],
+    [jukebox, setJukeboxMode],
   );
 
   const playingAlbumIndex = useMemo(() => {
@@ -90,9 +97,6 @@ export function MusicApp({
           trackTitle: playbackFeed.trackTitle || t("media.noMedia"),
         };
 
-  const inPlayer = isJukebox && jukeboxMode === "player";
-  const hasAlbum = jukebox.state.albumId != null;
-
   const currentAlbum = useMemo(() => {
     if (!jukebox.state.albumId) return null;
     return (
@@ -104,9 +108,24 @@ export function MusicApp({
     if (!inPlayer) setShowQueue(false);
   }, [inPlayer]);
 
+  // Keep the persisted view mode honest: no album means the library is what is
+  // actually on screen.
   useEffect(() => {
-    if (!isJukebox) setJukeboxMode("library");
-  }, [isJukebox]);
+    if (isJukebox && !hasAlbum && jukeboxMode === "player") setJukeboxMode("library");
+  }, [isJukebox, hasAlbum, jukeboxMode, setJukeboxMode]);
+
+  // Returning to a Jukebox service that lost its snapshot: put the album the
+  // listener had back, so switching sources never silently drops the music.
+  const wasJukebox = useRef(isJukebox);
+  useEffect(() => {
+    const returned = isJukebox && !wasJukebox.current;
+    wasJukebox.current = isJukebox;
+    if (!returned || hasAlbum) return;
+
+    void jukebox.restoreLastPlayback().then((restored) => {
+      if (restored) setJukeboxMode("player");
+    });
+  }, [isJukebox, hasAlbum, jukebox, setJukeboxMode]);
 
   const header = (
     <div className="relative z-[1] flex min-h-[76px] flex-none items-center justify-center px-6">
@@ -156,7 +175,7 @@ export function MusicApp({
       {header}
       <div className="relative min-h-0 flex-1">
         <AnimatePresence mode="popLayout">
-          {isJukebox && jukeboxMode === "library" ? (
+          {isJukebox && !inPlayer ? (
             <motion.div
               key="jukebox-library"
               initial={{ opacity: 0 }}

@@ -25,6 +25,7 @@ import type {
   JukeboxPlaybackState,
 } from "@/types/jukebox";
 import type { CurrentPlaybackFeed } from "@/types/media";
+import { rememberPlayback, type LastPlayback } from "@/lib/lastPlayback";
 
 export interface UseJukeboxResult {
   mode: JukeboxMode;
@@ -33,10 +34,19 @@ export interface UseJukeboxResult {
   albums: JukeboxAlbum[];
   state: JukeboxPlaybackState;
   playbackFeed: CurrentPlaybackFeed | null;
+  /** Last album the service actually had loaded (survives a service restart). */
+  lastPlayback: LastPlayback | null;
   scan: () => Promise<void>;
   artworkUrlFor: (albumId: string) => string | null;
-  playAlbum: (albumId: string) => Promise<boolean>;
+  /** Loads an album; `paused` restores it without starting playback. */
+  playAlbum: (albumId: string, options?: { paused?: boolean }) => Promise<boolean>;
   playTrack: (trackIndex: number) => Promise<void>;
+  /**
+   * Re-loads {@link UseJukeboxResult.lastPlayback} when the service reports
+   * nothing loaded, restoring the track and play/pause state. Returns true
+   * when something was restored.
+   */
+  restoreLastPlayback: () => Promise<boolean>;
   toggle: () => Promise<void>;
   next: () => Promise<void>;
   previous: () => Promise<void>;
@@ -49,7 +59,22 @@ export function useJukebox(): UseJukeboxResult {
   const [library, setLibrary] = useState<JukeboxLibrary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<JukeboxPlaybackState>(IDLE_PLAYBACK_STATE);
+  const [lastPlayback, setLastPlayback] = useState<LastPlayback | null>(null);
   const endpointRef = useRef<string | null>(null);
+  const lastPlaybackRef = useRef<LastPlayback | null>(null);
+  const stateRef = useRef<JukeboxPlaybackState>(IDLE_PLAYBACK_STATE);
+  stateRef.current = state;
+
+  /**
+   * Single entry point for states that come from the service: keeps the
+   * recovery memory in sync with what the service really has loaded.
+   */
+  const applyServiceState = useCallback((next: JukeboxPlaybackState) => {
+    const remembered = rememberPlayback(lastPlaybackRef.current, next);
+    lastPlaybackRef.current = remembered;
+    setLastPlayback(remembered);
+    setState(next);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,8 +120,8 @@ export function useJukebox(): UseJukeboxResult {
 
   useEffect(() => {
     if (mode !== "service" || !endpointRef.current) return;
-    return subscribeJukebox(endpointRef.current, setState);
-  }, [mode]);
+    return subscribeJukebox(endpointRef.current, applyServiceState);
+  }, [mode, applyServiceState]);
 
   const advanceMock = useCallback(() => {
     setState((prev) => {
@@ -199,11 +224,11 @@ export function useJukebox(): UseJukeboxResult {
   );
 
   const playAlbum = useCallback(
-    async (albumId: string): Promise<boolean> => {
+    async (albumId: string, options: { paused?: boolean } = {}): Promise<boolean> => {
       const baseUrl = endpointRef.current;
       if (isService && baseUrl) {
         try {
-          setState(await jukeboxPlay(baseUrl, albumId));
+          applyServiceState(await jukeboxPlay(baseUrl, albumId, options));
           return true;
         } catch {
           return false;
@@ -212,7 +237,7 @@ export function useJukebox(): UseJukeboxResult {
       mockPlay(albumId);
       return true;
     },
-    [isService, mockPlay],
+    [applyServiceState, isService, mockPlay],
   );
 
   const sendAction = useCallback(
@@ -244,7 +269,7 @@ export function useJukebox(): UseJukeboxResult {
         jumpToTrack(trackIndex);
         try {
           const nextState = await jukeboxPlayTrack(baseUrl, trackIndex);
-          setState(nextState);
+          applyServiceState(nextState);
         } catch {
           // keep the optimistic position; the next SSE event reconciles it
         }
@@ -252,8 +277,44 @@ export function useJukebox(): UseJukeboxResult {
         jumpToTrack(trackIndex);
       }
     },
-    [isService, jumpToTrack],
+    [applyServiceState, isService, jumpToTrack],
   );
+
+  /**
+   * Brings back what the service no longer has loaded.
+   *
+   * The service keeps a RAM snapshot while suspended, so this normally has
+   * nothing to do; it matters when the state was lost (process restart,
+   * crash, or an explicit stop issued by an older main process), where the
+   * media screen would otherwise stay blank for good.
+   */
+  const restoreLastPlayback = useCallback(async (): Promise<boolean> => {
+    const target = lastPlaybackRef.current;
+    const baseUrl = endpointRef.current;
+    if (!target || !isService || !baseUrl) return false;
+    if (stateRef.current.albumId) return false; // something is already loaded
+
+    try {
+      // Load paused and stay paused: rebuilding the state must not start audio
+      // any more than a snapshot restore does.
+      applyServiceState(await jukeboxPlay(baseUrl, target.albumId, { paused: true }));
+      if (target.trackIndex > 0) {
+        applyServiceState(await jukeboxPlayTrack(baseUrl, target.trackIndex));
+      }
+      await jukeboxPlaybackAction(baseUrl, "pause");
+      return true;
+    } catch {
+      return false;
+    }
+  }, [applyServiceState, isService]);
+
+  const stop = useCallback(async () => {
+    // An explicit stop is the one thing that must forget the album: otherwise
+    // returning to the source would restart what the listener just stopped.
+    lastPlaybackRef.current = null;
+    setLastPlayback(null);
+    await sendAction("stop");
+  }, [sendAction]);
 
   const seek = useCallback(
     async (seconds: number) => {
@@ -318,14 +379,16 @@ export function useJukebox(): UseJukeboxResult {
     albums,
     state,
     playbackFeed,
+    lastPlayback,
     scan,
     artworkUrlFor,
     playAlbum,
     playTrack,
+    restoreLastPlayback,
     toggle: () => sendAction("toggle"),
     next: () => sendAction("next"),
     previous: () => sendAction("previous"),
     seek,
-    stop: () => sendAction("stop"),
+    stop,
   };
 }

@@ -1,8 +1,13 @@
-import type { ReactNode } from "react";
-import { JukeboxContext } from "./jukebox";
+import { useState, type ReactNode } from "react";
+import { JukeboxContext, type JukeboxViewMode } from "./jukebox";
 import { useJukebox } from "@/hooks/useJukebox";
 
 export function JukeboxProvider({ children }: { children: ReactNode }) {
   const jukebox = useJukebox();
-  return <JukeboxContext.Provider value={jukebox}>{children}</JukeboxContext.Provider>;
+  const [viewMode, setViewMode] = useState<JukeboxViewMode>("library");
+  return (
+    <JukeboxContext.Provider value={{ ...jukebox, viewMode, setViewMode }}>
+      {children}
+    </JukeboxContext.Provider>
+  );
 }

@@ -38,6 +38,7 @@ export function useNowPlaying(
       sources.find((source) => source.id === selectedSourceId)?.name ??
       selectedSourceId,
     albumArt: nowPlaying?.albumArtUrl ?? null,
+    artworkStatus: nowPlaying?.artworkStatus ?? "unknown",
     isPlaying: nowPlaying?.isPlaying ?? false,
     onPlayPause: canControl ? adapter.togglePlayPause : NOOP,
     onSkip: canControl ? adapter.skipToNext : NOOP,

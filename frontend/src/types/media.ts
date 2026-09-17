@@ -11,6 +11,7 @@ export interface SourceNowPlaying {
   artistName: string | null;
   albumTitle: string | null;
   albumArtUrl: string | null;
+  artworkStatus: ArtworkStatus;
   isPlaying: boolean;
 }
 
@@ -30,6 +31,7 @@ export interface NowPlayingFeed {
   trackName: string;
   source: string;
   albumArt: string | null;
+  artworkStatus: ArtworkStatus;
   isPlaying: boolean;
   onPlayPause: () => void;
   onSkip: () => void;
