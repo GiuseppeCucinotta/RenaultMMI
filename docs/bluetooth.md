@@ -1,17 +1,16 @@
 # Bluetooth source
 
-The Bluetooth source lets a phone play audio through the system. The phone
-streams over A2DP; the app shows track metadata and cover art and exposes
-play/pause/skip controls, all driven by AVRCP.
-
-## How it works
+The Bluetooth source does two jobs for one phone: it plays the phone's audio
+(A2DP + AVRCP) and it manages the phone connection itself (discovery, pairing,
+forgetting). Both are driven by BlueZ over D-Bus; the renderer talks to a small
+HTTP/SSE API and never sees D-Bus.
 
 ```
-Phone (A2DP source / AVRCP controller)
+Phone (A2DP source / AVRCP controller / HFP handset)
   │  audio  ──────────►  ALSA / PulseAudio (system side)
-  └─ AVRCP metadata ──►  BlueZ (D-Bus, org.bluez.MediaPlayer1)
+  └─ AVRCP metadata ──►  BlueZ (D-Bus, org.bluez.*)
        │                    ▲
-       └ cover art (BIP)    │ org.bluez.MediaPlayer1 ObexPort + ImgHandle
+       └ cover art (BIP)    │  MediaPlayer1 / Device1 / Adapter1 / Agent1
             ▲               │
 Electron main process spawns the bluetooth service
   └─ bluetooth-service (Node, D-Bus via dbus-next)
@@ -19,25 +18,63 @@ Electron main process spawns the bluetooth service
             └─ renderer consumes it via src/services/bluetooth.ts + useBluetooth
 ```
 
-- The service watches `org.bluez.MediaPlayer1` for track changes and forwards
-  playback commands back to the phone.
-- Playback position is interpolated locally (500 ms tick): AVRCP only reports
-  position changes well under 1 Hz, so the last reported value is anchored and
-  advanced while the track is playing.
-- When no service is reachable (e.g. plain-browser dev without Electron),
-  `useBluetooth` falls back to `src/data/bluetooth.mock.ts`.
+## The state model
+
+One device-centric state tree, published on `/api/state` and over SSE. `devices`
+is the phone list and `media` always belongs to the active phone.
+
+```jsonc
+{
+  "available": true,
+  "adapter": { "path", "name", "address", "powered", "discoverable", "pairable", "discovering" },
+  "discovering": false,
+  "devices": [
+    {
+      "id": "/org/bluez/hci0/dev_60_06_E3_15_F2_B7",  // BlueZ object path = API id
+      "address": "60:06:E3:15:F2:B7",
+      "name": "Giuseppe's iPhone 15 Pro",
+      "kind": "phone",            // phone | audio | computer | other
+      "paired": true, "connected": true, "trusted": true, "primary": true,
+      "rssi": -48, "batteryPercent": 72,
+      "capabilities": { "audio": true, "remoteControl": true, "handsFree": true, "battery": true }
+    }
+  ],
+  "pairing": { "stage", "deviceId", "deviceName", "method", "passkey", "error" },
+  "media": { "deviceId", "status", "track", "positionMs", "durationMs" },
+  "calls": { "supported": false, "activeCallId", "calls": [], "recentNumbers": [] }
+}
+```
+
+- `primary` marks the phone that owns `media` and (later) calls.
+- `media.deviceId` is never a disconnected phone, so a stale player cannot leak
+  into the UI.
+- `pairing.stage` drives the prompt: `idle → pairing → awaiting-confirmation`,
+  or `failed` with a machine-readable `error`. The renderer maps `error` to a
+  translated message and keeps the row tappable for a retry.
+
+## One phone at a time
+
+BlueZ happily keeps several phones connected at once, so "last connected wins":
+when a phone connects it becomes primary and the other connected phones are
+disconnected. That keeps media and calls unambiguous without a settings screen.
 
 ## Service (`bluetooth-service/`)
 
 | File | Responsibility |
 | --- | --- |
-| `bluez.ts` | D-Bus client: discovers devices/players, tracks live property changes. |
-| `player.ts` | Single source of truth for playback state served to the renderer. |
-| `artwork.ts` | Cover art downloader (OBEX `bip-avrcp` client, see below). |
-| `volume.ts` | Applies volume to the BlueZ A2DP sink. |
-| `server.ts` | HTTP + SSE server exposing the API. |
-| `config.ts` | Configuration and defaults. |
 | `index.ts` | Entry point. |
+| `service.ts` | HTTP/SSE routes; maps them onto `PhoneManager` verbs. |
+| `phone.ts` | **The deep module.** Owns the published state, the primary-phone policy and the lifecycle. |
+| `bluez.ts` | The only file that talks to D-Bus (ObjectManager, Adapter1, Device1, MediaPlayer1, Battery1). |
+| `agent.ts` | `org.bluez.Agent1` implementation: turns BlueZ pairing prompts into events the UI answers. |
+| `pairing.ts` | The pairing state machine (pair, prompts, cancel, error mapping). |
+| `devices.ts` | Pure helpers: Class-of-Device classification, phone filtering, capability mapping. |
+| `media.ts` | AVRCP read model for the active phone + position interpolation. |
+| `artwork.ts` | Cover art downloader (OBEX `bip-avrcp` client, see below). |
+| `calls.ts` | Reserved telephony seam; see "Phone calls" below. |
+| `volume.ts` | Applies volume to the BlueZ A2DP sink. |
+| `ports.ts` | Structural port types so the managers are testable with fakes. |
+| `config.ts` | Configuration and defaults. |
 
 Configuration (environment variables):
 
@@ -45,24 +82,57 @@ Configuration (environment variables):
 | --- | --- | --- |
 | `BLUETOOTH_PORT` | `4200` | HTTP/SSE port, bound to 127.0.0.1. |
 | `BLUETOOTH_ARTWORK_DIR` | `$TMPDIR/renault-mmi-artwork` | Cover art cache folder. |
+| `BLUETOOTH_SHOW_ALL_DEVICES` | unset | `1` lists computers/headsets too, for a phone that hides its class. |
 
 ### API
 
 Base URL `http://127.0.0.1:4200`. Responses are JSON; CORS is open for the
-renderer.
+renderer. Errors are `{ "error": "..." }` with 400/404/409/501.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/health` | Service health, BlueZ availability. |
-| GET | `/api/state` | Current playback state (device, track, position). |
+| GET | `/api/health` | Service health + Bluetooth details (adapter, pairable, prompt availability, paired count). |
+| GET | `/api/state` | The state tree above; also the initial SSE frame. |
+| GET | `/api/events` | SSE stream of state frames. |
+| GET | `/api/artwork/:handle.jpg` | Downloaded cover art image. |
+| POST | `/api/scan` | `{ "action": "start" \| "stop" \| "refresh" }`. `start` makes the car discoverable and pairable; the service stops the inquiry itself after 60 s. |
+| POST | `/api/phone` | `{ "action": "connect" \| "disconnect" \| "forget" \| "trust" \| "untrust", "deviceId" }`. `connect` pairs when the phone is not paired yet. |
+| POST | `/api/pairing` | `{ "action": "pair" \| "confirm" \| "reject" \| "cancel" \| "submit", "deviceId?", "value?" }`. `confirm`/`reject` answer the prompt on screen; `submit` carries a typed passkey/PIN. |
 | POST | `/api/playback` | `{ "action": "play" \| "pause" \| "toggle" \| "next" \| "previous" \| "stop" }`. |
 | POST | `/api/volume` | `{ "volume": 0-100 }` - set the A2DP sink volume. |
-| GET | `/api/artwork/:handle.jpg` | Downloaded cover art image. |
-| GET | `/api/events` | SSE stream of state updates. |
+| POST | `/api/calls` | Reserved; answers **501** until an HFP backend exists. |
 
-The state's `track.artworkState` is `"ready"` once the art file is cached
-(`artworkUrl` points at it), `"loading"` while downloading, or `"none"` when
-the phone did not provide an image handle.
+`GET /api/health` and `/api/state` are not activity and never wake a suspended
+service; every mutating request auto-resumes first.
+
+### Pairing
+
+`pairing.ts` registers an `org.bluez.Agent1` with **KeyboardDisplay**
+capability. BlueZ blocks inside the agent while a phone is being paired, so each
+request stores its D-Bus reply and emits a prompt; the renderer answers it
+(`confirm`/`reject`/`submit`) and the stored reply is released. An unanswered
+prompt is rejected after 25 s so a lost renderer cannot wedge pairing.
+
+Prompts map to the UI like this:
+
+| BlueZ request | `pairing.method` | UI |
+| --- | --- | --- |
+| `RequestConfirmation` | `confirm` | shows the 6-digit code, Confirm/Reject |
+| `DisplayPasskey` | `confirm` | shows the code being typed on the phone |
+| `RequestPasskey` / `RequestPinCode` | `passkey-entry` | numeric input, submitted with `value` |
+| `RequestAuthorization` / `AuthorizeService` | `confirm` | Confirm/Reject |
+
+The prompt is the only blocking part of pairing, so **answering it immediately
+stops showing it**: the state moves from `awaiting-confirmation` to `pairing`
+while `Pair()` runs to completion, and then to `idle` (success) or `failed`
+(with a reason). A phone that finishes the pairing by itself — the user taps
+"Pair" on the handset — connects without the car answering, which also clears a
+prompt that is still on screen. Rejecting or cancelling publishes `idle`/`failed`
+the same way, so the modal is never left hanging on a stale prompt.
+
+The agent needs to own no particular bus name — BlueZ keys agents off the
+sender's unique name — so a system-bus policy that refuses our well-known name
+(`org.renaultmmi.btagent`) only costs introspection, not pairing.
 
 ## Cover art (AVRCP 1.6)
 
@@ -83,13 +153,51 @@ when the device disconnects.
 Cache: one JPEG per handle in the artwork dir, capped at 64 files (oldest
 evicted first).
 
+## Phone calls (reserved, not implemented)
+
+Answering and placing calls needs Hands-Free Profile, which BlueZ alone cannot
+carry: HFP needs a telephony backend (oFono or equivalent) on the D-Bus plus a
+separate SCO/PCM audio path. The seam is prepared so adding it stays additive:
+
+- `calls.ts` defines `CallBackend` and `CallManager`; **the service state
+  already carries `calls`** and the routes already accept `answer`/`hangup`/
+  `dial`/`mute`/`hold`/…, answering 501 while no backend is installed.
+- The renderer feature-detects with `state.calls.supported` and shows the
+  "Phone calls" placeholder card.
+- The pairing agent, device list and `primary` phone are unaffected by adding a
+  backend: it only has to implement `CallBackend` and be handed to
+  `CallManager`.
+
 ## Requirements
 
-The cover art feature needs a recent Linux Bluetooth stack:
+- **BlueZ** (>= 5.79 if you want cover art) with a working controller.
+- For cover art: `bluetoothd --experimental` (publishes `ObexPort`) **and** a
+  running `obexd` (packaged separately on some distros, e.g. `bluez-obex`).
+- `pactl` (PulseAudio or pipewire-pulse) for the A2DP sink volume.
+- The service must be able to use the **system** D-Bus. If it runs as a
+  non-root user, make sure the bus policy allows talking to `org.bluez` and
+  registering an agent.
 
-- **BlueZ >= 5.79** running as `bluetoothd --experimental` (this publishes the
-  `ObexPort` property).
-- **obexd** running (packaged separately on some distros, e.g. `bluez-obex`).
+Without a controller the service still starts and `/api/health` reports
+`adapterPowered: false` / `visibleDevices: 0`; the UI shows "Bluetooth is turned
+off on this system" instead of an empty list.
 
-Without them the service stays up but cover art never downloads and the UI
-shows the fallback cover. See the README for setup commands.
+## Testing without hardware
+
+- `npm test` runs the unit suites: device classification/filtering, the pairing
+  state machine and error mapping, the primary-phone policy, state mapping and
+  the service routes. They use `test/fake-bluez.ts`, a structural fake of
+  `BlueZClient`, so no D-Bus and no phone are needed.
+- `node scripts/fake-bluetooth-service.mjs [port]` serves a fake state (and
+  SSE) for UI work, including a pairing prompt that resolves after a delay.
+  Point the renderer at it with `VITE_BLUETOOTH_BASE_URL`:
+
+  | Env | Effect |
+  | --- | --- |
+  | `NOPHONE=1` | start disconnected, so the connect screen is shown |
+  | `PAIR_DELAY_MS=5000` | keep `pairing` running that long, to see the progress state |
+  | `LOG_REQUESTS=1` | log every request the renderer makes |
+
+  To view it in a browser without Electron, run Vite with a config that skips
+  the electron plugin and proxies `/api` to the fake service (a browser blocks
+  cross-origin calls to loopback).
