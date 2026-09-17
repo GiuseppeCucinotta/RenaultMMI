@@ -2,27 +2,26 @@ import { EventEmitter } from "node:events";
 import * as dbus from "dbus-next";
 import type { ClientInterface, MessageBus } from "dbus-next";
 import { logger } from "./logger.js";
+import {
+  isPhoneCandidate,
+  toAdapterSnapshot,
+  type BluezAdapterSnapshot,
+  type BluezDeviceSnapshot,
+} from "./devices.js";
 
 const BLUEZ_SERVICE = "org.bluez";
 const BLUEZ_ROOT = "/";
+
 const OBJECT_MANAGER_IFACE = "org.freedesktop.DBus.ObjectManager";
 const PROPERTIES_IFACE = "org.freedesktop.DBus.Properties";
+const ADAPTER_IFACE = "org.bluez.Adapter1";
 const DEVICE_IFACE = "org.bluez.Device1";
+const BATTERY_IFACE = "org.bluez.Battery1";
 const PLAYER_IFACE = "org.bluez.MediaPlayer1";
 
-const A2DP_SOURCE_UUID = "0000110a-0000-1000-8000-00805f9b34fb";
-const A2DP_SINK_UUID = "0000110b-0000-1000-8000-00805f9b34fb";
-const AVRCP_UUID = "0000110e-0000-1000-8000-00805f9b34fb";
-
 const RESYNC_INTERVAL_MS = 5000;
-
-export interface BluezDevice {
-  path: string;
-  address: string;
-  alias: string;
-  connected: boolean;
-  audioProfile: boolean;
-}
+/** Discovery is a radio inquiry; leaving it on wears the controller and the phones. */
+const DISCOVERY_TIMEOUT_MS = 60_000;
 
 export interface BluezTrack {
   title: string | null;
@@ -47,6 +46,16 @@ export interface BluezPlayer {
 
 type ManagedObjects = Record<string, Record<string, Record<string, unknown>>>;
 
+/** Injectable bus factory: lets tests run the whole client without a system bus. */
+export type BluezBusFactory = () => MessageBus;
+
+export interface BlueZClientOptions {
+  /** Overrides `dbus.systemBus()`. Used by tests, never by the service. */
+  createBus?: BluezBusFactory;
+  /** Show computers/headsets too; driven by `BLUETOOTH_SHOW_ALL_DEVICES`. */
+  showAllDevices?: boolean;
+}
+
 function unwrap(value: unknown): unknown {
   if (value instanceof dbus.Variant) return unwrap(value.value);
   if (Array.isArray(value)) return value.map((item) => unwrap(item));
@@ -60,33 +69,125 @@ function unwrap(value: unknown): unknown {
   return value;
 }
 
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function asUuidList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+/** `dev_AA_BB_...` object path → `AA:BB:...`, used when Address is missing. */
+function addressFromPath(path: string): string {
+  const match = /dev_([0-9A-Fa-f]{2}(?:_[0-9A-Fa-f]{2}){5})$/.exec(path);
+  return match ? match[1].replace(/_/g, ":").toUpperCase() : "";
+}
+
+/** BlueZ escapes non-alphanumerics in object paths as `_XX` hex. */
+function unescapePath(path: string): string {
+  return path.replace(/_([0-9A-Fa-f]{2})/g, (_all, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+}
+
 /**
  * Thin client over BlueZ (the Linux Bluetooth stack) on the D-Bus system bus.
  *
- * Discovers A2DP/AVRCP devices and their `org.bluez.MediaPlayer1` players
- * (exposed when the Pi acts as an AVRCP controller over a connected phone),
- * tracks live property changes, and forwards playback commands. A periodic
- * re-sync acts as a safety net for missed signals.
+ * It owns four things and nothing more:
+ *  - the `Adapter1` (power, discoverability, inquiry start/stop),
+ *  - the device map, including `Battery1` and `Class of Device`,
+ *  - A2DP/AVRCP `MediaPlayer1` players, and
+ *  - the raw `Device1` operations (pair/connect/disconnect/forget).
+ *
+ * All policy — which phone is primary, how a pairing prompt is answered,
+ * when the scan stops — lives in the managers above this class, so the D-Bus
+ * surface stays thin and mockable.
  */
 export class BlueZClient extends EventEmitter {
+  private readonly options: BlueZClientOptions;
   private bus: MessageBus | null = null;
   private available = false;
   private objectManagerSubscribed = false;
-  private devices = new Map<string, BluezDevice>();
+  private adapters = new Map<string, BluezAdapterSnapshot>();
+  private devices = new Map<string, BluezDeviceSnapshot>();
   private players = new Map<string, BluezPlayer>();
   private subscribedPaths = new Set<string>();
   private resyncTimer: NodeJS.Timeout | null = null;
+  private discoveryTimer: NodeJS.Timeout | null = null;
   private resyncQueued = false;
   private warnedNoObex = false;
+  private warnedNoAdapter = false;
+
+  constructor(options: BlueZClientOptions = {}) {
+    super();
+    this.options = options;
+  }
 
   isAvailable(): boolean {
     return this.available;
   }
 
+  /** The system bus, so the pairing agent can export itself on the same connection. */
+  getBus(): MessageBus | null {
+    return this.bus;
+  }
+
+  /** Out-of-band re-read, used by the `refresh` scan action. */
+  resyncNow(): Promise<void> {
+    return this.resync();
+  }
+
+  /** The controller the service drives; the first adapter BlueZ exposes. */
+  getAdapter(): BluezAdapterSnapshot | null {
+    return this.adapters.values().next().value ?? null;
+  }
+
+  getAdapters(): BluezAdapterSnapshot[] {
+    return [...this.adapters.values()];
+  }
+
+  getDevices(): BluezDeviceSnapshot[] {
+    return [...this.devices.values()];
+  }
+
+  getDevice(id: string): BluezDeviceSnapshot | null {
+    return this.devices.get(id) ?? null;
+  }
+
+  getPlayers(): BluezPlayer[] {
+    return [...this.players.values()];
+  }
+
+  getPlayer(id: string): BluezPlayer | null {
+    return this.players.get(id) ?? null;
+  }
+
+  /** Players belonging to a device, newest BlueZ exposes one per device. */
+  getPlayersForDevice(devicePath: string): BluezPlayer[] {
+    return [...this.players.values()].filter((player) => player.devicePath === devicePath);
+  }
+
+  /**
+   * Devices that pass the phone filter, paired first. Ordering is otherwise
+   * preserved so the list does not jump around between resyncs.
+   */
+  listPhoneCandidates(): BluezDeviceSnapshot[] {
+    const options = { showAll: this.options.showAllDevices ?? false };
+    const candidates = this.getDevices().filter((device) => isPhoneCandidate(device, options));
+    return candidates.sort((a, b) => Number(b.paired) - Number(a.paired));
+  }
+
+  /* ------------------------------- lifecycle ------------------------------ */
+
   async connect(): Promise<void> {
     if (this.bus) return;
 
-    this.bus = dbus.systemBus();
+    this.bus = this.options.createBus ? this.options.createBus() : dbus.systemBus();
     this.bus.on("error", (error: unknown) => {
       logger.error("dbus bus error:", error instanceof Error ? error.message : error);
     });
@@ -102,60 +203,253 @@ export class BlueZClient extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
+    this.stopDiscoveryTimer();
     if (this.resyncTimer) {
       clearInterval(this.resyncTimer);
       this.resyncTimer = null;
     }
     const bus = this.bus;
     this.bus = null;
+    this.adapters.clear();
+    this.devices.clear();
+    this.players.clear();
+    this.subscribedPaths.clear();
+    this.objectManagerSubscribed = false;
+    this.available = false;
     if (bus) bus.disconnect();
   }
 
-  getActiveDevice(): BluezDevice | null {
-    for (const player of this.players.values()) {
-      const device = this.devices.get(player.devicePath);
-      if (device?.connected) return device;
+  /* -------------------------------- adapter ------------------------------- */
+
+  private async adapterInterface(method: string): Promise<((...args: unknown[]) => Promise<unknown>) | null> {
+    const bus = this.bus;
+    const adapter = this.getAdapter();
+    if (!bus || !adapter) return null;
+    try {
+      const object = await bus.getProxyObject(BLUEZ_SERVICE, adapter.path);
+      const iface = object.getInterface(ADAPTER_IFACE) as ClientInterface;
+      const call = iface[method] as ((...args: unknown[]) => Promise<unknown>) | undefined;
+      return call ? call.bind(iface) : null;
+    } catch (error) {
+      logger.error(`adapter ${method} unavailable:`, errorMessage(error));
+      return null;
     }
-    for (const device of this.devices.values()) {
-      if (device.connected && device.audioProfile) return device;
+  }
+
+  private async setAdapterProperty(name: string, value: unknown): Promise<boolean> {
+    const bus = this.bus;
+    const adapter = this.getAdapter();
+    if (!bus || !adapter) return false;
+    try {
+      const object = await bus.getProxyObject(BLUEZ_SERVICE, adapter.path);
+      const props = object.getInterface(PROPERTIES_IFACE) as ClientInterface;
+      await (props.Set as (...args: unknown[]) => Promise<unknown>).call(
+        props,
+        ADAPTER_IFACE,
+        name,
+        new dbus.Variant(signatureOf(value), value),
+      );
+      logger.log(`adapter ${name} -> ${String(value)}`);
+      return true;
+    } catch (error) {
+      logger.error(`failed to set adapter ${name}:`, errorMessage(error));
+      return false;
     }
-    return null;
   }
 
-  getActivePlayer(): BluezPlayer | null {
-    const device = this.getActiveDevice();
-    if (!device) return null;
-    for (const player of this.players.values()) {
-      if (player.devicePath === device.path) return player;
+  /** Powers the radio. `false` also aborts any running inquiry. */
+  async setPowered(powered: boolean): Promise<boolean> {
+    if (!powered) await this.stopDiscovery();
+    return this.setAdapterProperty("Powered", powered);
+  }
+
+  async setPairable(pairable: boolean): Promise<boolean> {
+    return this.setAdapterProperty("Pairable", pairable);
+  }
+
+  async setDiscoverable(discoverable: boolean): Promise<boolean> {
+    // Never let BlueZ time the discoverable window out from under a scan:
+    // 0 means "until told otherwise", and stopDiscovery restores it.
+    if (discoverable) await this.setDiscoverableTimeout(0);
+    const applied = await this.setAdapterProperty("Discoverable", discoverable);
+    if (!discoverable) await this.setDiscoverableTimeout(180);
+    return applied;
+  }
+
+  private async setDiscoverableTimeout(seconds: number): Promise<boolean> {
+    return this.setAdapterProperty("DiscoverableTimeout", seconds);
+  }
+
+  /**
+   * Starts an inquiry and arms a hard timeout, so a renderer that crashes or
+   * navigates away can never leave the radio scanning forever.
+   */
+  async startDiscovery(): Promise<boolean> {
+    if (this.getAdapter()?.discovering) {
+      this.armDiscoveryTimeout();
+      return true;
     }
-    return null;
+    const start = await this.adapterInterface("StartDiscovery");
+    if (!start) return false;
+    try {
+      await start();
+      logger.log("discovery started");
+      const adapter = this.getAdapter();
+      if (adapter) adapter.discovering = true;
+      this.armDiscoveryTimeout();
+      this.emit("changed");
+      return true;
+    } catch (error) {
+      logger.error("startDiscovery failed:", errorMessage(error));
+      return false;
+    }
   }
 
-  async play(path: string): Promise<void> {
-    await this.callPlayer(path, "Play");
+  async stopDiscovery(): Promise<boolean> {
+    this.stopDiscoveryTimer();
+    if (!this.getAdapter()?.discovering) return true;
+    const stop = await this.adapterInterface("StopDiscovery");
+    if (!stop) return false;
+    try {
+      await stop();
+      logger.log("discovery stopped");
+      const adapter = this.getAdapter();
+      if (adapter) adapter.discovering = false;
+      this.emit("discovery-stopped");
+      this.emit("changed");
+      return true;
+    } catch (error) {
+      // BlueZ answers "No discovery started" if it stopped on its own.
+      logger.warn("stopDiscovery failed:", errorMessage(error));
+      const adapter = this.getAdapter();
+      if (adapter) adapter.discovering = false;
+      this.emit("discovery-stopped");
+      this.emit("changed");
+      return false;
+    }
   }
 
-  async pause(path: string): Promise<void> {
-    await this.callPlayer(path, "Pause");
+  isDiscovering(): boolean {
+    return this.getAdapter()?.discovering ?? false;
   }
 
-  async next(path: string): Promise<void> {
-    await this.callPlayer(path, "Next");
+  private armDiscoveryTimeout(): void {
+    this.stopDiscoveryTimer();
+    this.discoveryTimer = setTimeout(() => {
+      logger.log("discovery timeout reached, stopping scan");
+      void this.stopDiscovery();
+    }, DISCOVERY_TIMEOUT_MS);
+    this.discoveryTimer.unref();
   }
 
-  async previous(path: string): Promise<void> {
-    await this.callPlayer(path, "Previous");
+  private stopDiscoveryTimer(): void {
+    if (this.discoveryTimer) clearTimeout(this.discoveryTimer);
+    this.discoveryTimer = null;
   }
 
-  async stop(path: string): Promise<void> {
-    await this.callPlayer(path, "Stop");
+  /* --------------------------------- device ------------------------------- */
+
+  private async deviceInterface(
+    devicePath: string,
+    ifaceName: string,
+    method: string,
+  ): Promise<((...args: unknown[]) => Promise<unknown>) | null> {
+    const bus = this.bus;
+    if (!bus) return null;
+    try {
+      const object = await bus.getProxyObject(BLUEZ_SERVICE, devicePath);
+      const iface = object.getInterface(ifaceName) as ClientInterface;
+      const call = iface[method] as ((...args: unknown[]) => Promise<unknown>) | undefined;
+      return call ? call.bind(iface) : null;
+    } catch (error) {
+      logger.error(`${method} on ${devicePath} unavailable:`, errorMessage(error));
+      return null;
+    }
   }
+
+  /**
+   * Calls a `Device1` method. Errors bubble up: the pairing manager needs to
+   * distinguish "user rejected" from "already paired" from "timed out".
+   */
+  async callDevice(devicePath: string, method: string): Promise<void> {
+    const call = await this.deviceInterface(devicePath, DEVICE_IFACE, method);
+    if (!call) throw new Error(`BlueZ device method ${method} unavailable`);
+    logger.log(`device ${method} -> ${devicePath}`);
+    await call();
+  }
+
+  async setDeviceTrusted(devicePath: string, trusted: boolean): Promise<boolean> {
+    const bus = this.bus;
+    if (!bus) return false;
+    try {
+      const object = await bus.getProxyObject(BLUEZ_SERVICE, devicePath);
+      const props = object.getInterface(PROPERTIES_IFACE) as ClientInterface;
+      await (props.Set as (...args: unknown[]) => Promise<unknown>).call(
+        props,
+        DEVICE_IFACE,
+        "Trusted",
+        new dbus.Variant("b", trusted),
+      );
+      return true;
+    } catch (error) {
+      logger.warn(`failed to set Trusted=${trusted} on ${devicePath}:`, errorMessage(error));
+      return false;
+    }
+  }
+
+  async pairDevice(devicePath: string): Promise<void> {
+    await this.callDevice(devicePath, "Pair");
+  }
+
+  async cancelPairing(devicePath: string): Promise<void> {
+    await this.callDevice(devicePath, "CancelPairing");
+  }
+
+  async connectDevice(devicePath: string): Promise<void> {
+    await this.callDevice(devicePath, "Connect");
+  }
+
+  async disconnectDevice(devicePath: string): Promise<void> {
+    await this.callDevice(devicePath, "Disconnect");
+  }
+
+  /** Unpairs: BlueZ drops the link key and the device from the object tree. */
+  async forgetDevice(devicePath: string): Promise<void> {
+    const adapter = this.getAdapter();
+    if (!adapter) throw new Error("no Bluetooth adapter");
+    const remove = await this.adapterInterface("RemoveDevice");
+    if (!remove) throw new Error("RemoveDevice unavailable");
+    logger.log(`forget device ${devicePath}`);
+    await remove(devicePath);
+  }
+
+  async play(playerPath: string): Promise<void> {
+    await this.callPlayer(playerPath, "Play");
+  }
+
+  async pause(playerPath: string): Promise<void> {
+    await this.callPlayer(playerPath, "Pause");
+  }
+
+  async next(playerPath: string): Promise<void> {
+    await this.callPlayer(playerPath, "Next");
+  }
+
+  async previous(playerPath: string): Promise<void> {
+    await this.callPlayer(playerPath, "Previous");
+  }
+
+  async stop(playerPath: string): Promise<void> {
+    await this.callPlayer(playerPath, "Stop");
+  }
+
+  /* --------------------------------- resync ------------------------------- */
 
   private async resync(): Promise<void> {
     const bus = this.bus;
     if (!bus) return;
 
-    const wasActivePath = this.getActiveDevice()?.path ?? null;
+    const wasPrimaryPath = this.primaryDevicePath();
 
     try {
       const root = await bus.getProxyObject(BLUEZ_SERVICE, BLUEZ_ROOT);
@@ -163,23 +457,41 @@ export class BlueZClient extends EventEmitter {
       const raw = (await manager.GetManagedObjects()) as unknown;
       const managed = unwrap(raw) as ManagedObjects;
 
-      const devices = new Map<string, BluezDevice>();
+      const adapters = new Map<string, BluezAdapterSnapshot>();
+      const devices = new Map<string, BluezDeviceSnapshot>();
       const players = new Map<string, BluezPlayer>();
       const now = Date.now();
 
       for (const [path, interfaces] of Object.entries(managed)) {
+        const adapterProps = interfaces[ADAPTER_IFACE];
+        if (adapterProps) {
+          const previous = this.adapters.get(path);
+          const snapshot = toAdapterSnapshot(path, adapterProps);
+          adapters.set(path, snapshot);
+          // Discovering is polled by BlueZ: keep our own timeout authoritative
+          // so we never report a scan that we already stopped.
+          if (previous && previous.discovering !== snapshot.discovering) {
+            logger.log(`adapter discovering -> ${snapshot.discovering}`);
+          }
+        }
+
         const deviceProps = interfaces[DEVICE_IFACE];
         if (deviceProps) {
-          const uuids = Array.isArray(deviceProps.UUIDs) ? deviceProps.UUIDs.map(String) : [];
+          const batteryProps = interfaces[BATTERY_IFACE];
           devices.set(path, {
             path,
-            address: String(deviceProps.Address ?? ""),
-            alias: String(deviceProps.Alias ?? deviceProps.Name ?? ""),
+            address: asString(deviceProps.Address) ?? addressFromPath(path),
+            alias: asString(deviceProps.Alias) ?? asString(deviceProps.Name) ?? "",
+            name: asString(deviceProps.Name),
             connected: Boolean(deviceProps.Connected),
-            audioProfile:
-              uuids.includes(A2DP_SOURCE_UUID) ||
-              uuids.includes(A2DP_SINK_UUID) ||
-              uuids.includes(AVRCP_UUID),
+            paired: Boolean(deviceProps.Paired),
+            trusted: Boolean(deviceProps.Trusted),
+            blocked: Boolean(deviceProps.Blocked),
+            rssi: asNumber(deviceProps.RSSI),
+            classOfDevice: asNumber(deviceProps.Class),
+            batteryPercent: asNumber(batteryProps?.Percentage),
+            adapterPath: path.slice(0, path.lastIndexOf("/")) || BLUEZ_ROOT,
+            uuids: asUuidList(deviceProps.UUIDs),
           });
         }
 
@@ -208,14 +520,14 @@ export class BlueZClient extends EventEmitter {
                   ? trackRaw.ImgHandle
                   : null,
             },
-            obexPort:
-              typeof playerProps.ObexPort === "number" ? playerProps.ObexPort : null,
+            obexPort: typeof playerProps.ObexPort === "number" ? playerProps.ObexPort : null,
             positionMs: nextPositionMs,
             positionAt: samePosition && prev ? prev.positionAt : now,
           });
         }
       }
 
+      this.adapters = adapters;
       this.devices = devices;
       this.players = players;
       this.available = true;
@@ -224,47 +536,99 @@ export class BlueZClient extends EventEmitter {
         void this.subscribeObjectManager();
       }
 
-      const activeDevice = this.getActiveDevice();
-      const activePlayer = this.getActivePlayer();
-      if (wasActivePath !== activeDevice?.path) {
-        logger.log(
-          activeDevice
-            ? `device connected: ${activeDevice.alias} (${activeDevice.address})`
-            : "no active audio device",
-        );
-        this.emit(activeDevice ? "device-connected" : "device-disconnected");
+      // Bring the cached "discovering" flag back in line with BlueZ, but leave
+      // the timeout timer untouched (it is the only thing that stops the scan).
+      const adapter = this.getAdapter();
+      if (adapter && Object.keys(managed).length > 0) {
+        const live = Object.entries(managed).find(([, ifaces]) => ifaces[ADAPTER_IFACE]);
+        if (live) adapter.discovering = Boolean(live[1][ADAPTER_IFACE]?.Discovering);
       }
-      logger.log(
-        `resync: ${devices.size} device(s), ${players.size} player(s)` +
-          (activePlayer
-            ? ` | active player: ${activePlayer.name}` +
-              (activePlayer.track.title ? ` | "${activePlayer.track.title}"` : "") +
-              ` | status=${activePlayer.status} pos=${activePlayer.positionMs}ms` +
-              (activePlayer.obexPort != null ? ` | obexPort=${activePlayer.obexPort}` : "") +
-              (activePlayer.track.imgHandle ? ` | imgHandle=${activePlayer.track.imgHandle}` : "")
-            : activeDevice
-              ? ` | device "${activeDevice.alias}" has no MediaPlayer1 (start playback on the phone)`
-              : ""),
-      );
-      const experimental = Array.from(this.players.values()).some((p) => p.obexPort != null);
-      if (!experimental && this.players.size > 0 && !this.warnedNoObex) {
-        logger.warn(
-          "no player exposes ObexPort -> cover art unavailable " +
-            "(bluetoothd must run with --experimental; reconnect the phone after enabling)",
-        );
-      }
-      this.warnedNoObex = !experimental;
+
+      this.warnIfNoAdapter();
+      this.reportResync(wasPrimaryPath);
       this.emit("changed");
     } catch (error) {
       if (this.available) {
-        logger.error("bluez unavailable:", error instanceof Error ? error.message : error);
+        logger.error("bluez unavailable:", errorMessage(error));
       }
       this.available = false;
+      this.adapters.clear();
       this.devices.clear();
       this.players.clear();
       this.emit("bluez-unavailable");
     }
   }
+
+  private warnIfNoAdapter(): void {
+    const missing = this.adapters.size === 0;
+    if (missing && !this.warnedNoAdapter) {
+      logger.warn("BlueZ is up but exposes no Adapter1 (no Bluetooth controller?)");
+    }
+    this.warnedNoAdapter = missing;
+  }
+
+  private reportResync(wasPrimaryPath: string | null): void {
+    const primary = this.primaryDevicePath();
+    if (wasPrimaryPath !== primary) {
+      const device = primary ? this.devices.get(primary) : null;
+      logger.log(
+        device
+          ? `active device: ${device.alias} (${device.address})`
+          : "no connected phone",
+      );
+      this.emit(primary ? "device-connected" : "device-disconnected", primary);
+    }
+
+    const activePlayer = this.getActivePlayer();
+    logger.log(
+      `resync: ${this.adapters.size} adapter(s), ${this.devices.size} device(s), ` +
+        `${this.players.size} player(s)` +
+        (activePlayer
+          ? ` | player: ${activePlayer.name}` +
+            (activePlayer.track.title ? ` | "${activePlayer.track.title}"` : "") +
+            ` | status=${activePlayer.status} pos=${activePlayer.positionMs}ms` +
+            (activePlayer.obexPort != null ? ` | obexPort=${activePlayer.obexPort}` : "")
+          : ""),
+    );
+
+    const experimental = [...this.players.values()].some((player) => player.obexPort != null);
+    if (!experimental && this.players.size > 0 && !this.warnedNoObex) {
+      logger.warn(
+        "no player exposes ObexPort -> cover art unavailable " +
+          "(bluetoothd must run with --experimental; reconnect the phone after enabling)",
+      );
+    }
+    this.warnedNoObex = !experimental;
+  }
+
+  /**
+   * The device that owns the audio path: a connected device with a media
+   * player wins, then any connected audio-profile device. Deliberately
+   * unchanged from the AVRCP-only era so media behaviour is stable.
+   */
+  primaryDevicePath(): string | null {
+    for (const player of this.players.values()) {
+      const device = this.devices.get(player.devicePath);
+      if (device?.connected) return player.devicePath;
+    }
+    for (const device of this.devices.values()) {
+      if (device.connected && playerlessAudioDevice(device)) return device.path;
+    }
+    return null;
+  }
+
+  getActiveDevice(): BluezDeviceSnapshot | null {
+    const path = this.primaryDevicePath();
+    return path ? (this.devices.get(path) ?? null) : null;
+  }
+
+  getActivePlayer(): BluezPlayer | null {
+    const device = this.getActiveDevice();
+    if (!device) return null;
+    return this.getPlayersForDevice(device.path)[0] ?? null;
+  }
+
+  /* ------------------------------- signals -------------------------------- */
 
   private queueResync(): void {
     if (this.resyncQueued) return;
@@ -286,7 +650,7 @@ export class BlueZClient extends EventEmitter {
       this.objectManagerSubscribed = true;
       logger.log("subscribed to ObjectManager signals");
     } catch (error) {
-      logger.error("failed to subscribe to object manager:", error instanceof Error ? error.message : error);
+      logger.error("failed to subscribe to object manager:", errorMessage(error));
     }
   }
 
@@ -307,6 +671,7 @@ export class BlueZClient extends EventEmitter {
           } else {
             logger.warn("BlueZ has exited");
             this.available = false;
+            this.adapters.clear();
             this.devices.clear();
             this.players.clear();
             this.emit("bluez-unavailable");
@@ -314,7 +679,7 @@ export class BlueZClient extends EventEmitter {
         },
       );
     } catch (error) {
-      logger.error("failed to subscribe to name owner changes:", error instanceof Error ? error.message : error);
+      logger.error("failed to subscribe to name owner changes:", errorMessage(error));
     }
   }
 
@@ -323,6 +688,7 @@ export class BlueZClient extends EventEmitter {
     if (!bus) return;
 
     const targets = new Set<string>();
+    for (const path of this.adapters.keys()) targets.add(path);
     for (const path of this.devices.keys()) targets.add(path);
     for (const path of this.players.keys()) targets.add(path);
 
@@ -344,6 +710,13 @@ export class BlueZClient extends EventEmitter {
           this.subscribedPaths.delete(path);
         });
     }
+
+    // Drop subscriptions for objects BlueZ has removed, otherwise the set
+    // grows for the lifetime of the service.
+    const live = targets;
+    for (const path of [...this.subscribedPaths]) {
+      if (!live.has(path)) this.subscribedPaths.delete(path);
+    }
   }
 
   private onPropertiesChanged(
@@ -351,19 +724,55 @@ export class BlueZClient extends EventEmitter {
     ifaceName: string,
     changed: Record<string, unknown>,
   ): void {
+    if (ifaceName === ADAPTER_IFACE) {
+      const adapter = this.adapters.get(path);
+      if (!adapter) return;
+      if (typeof changed.Powered === "boolean" && changed.Powered !== adapter.powered) {
+        adapter.powered = changed.Powered;
+        logger.log(changed.Powered ? "adapter powered on" : "adapter powered off");
+      }
+      if (typeof changed.Discoverable === "boolean") adapter.discoverable = changed.Discoverable;
+      if (typeof changed.Pairable === "boolean") adapter.pairable = changed.Pairable;
+      if (typeof changed.Discovering === "boolean") {
+        adapter.discovering = changed.Discovering;
+        // BlueZ stops discovery on its own after ~30 s; keep our timer honest.
+        if (!changed.Discovering) this.stopDiscoveryTimer();
+      }
+      if (typeof changed.Alias === "string") adapter.name = changed.Alias;
+      this.emit("changed");
+      return;
+    }
+
+    if (ifaceName === BATTERY_IFACE) {
+      const device = this.devices.get(path);
+      if (!device) return;
+      const percent = asNumber(changed.Percentage);
+      if (percent != null && percent !== device.batteryPercent) {
+        device.batteryPercent = percent;
+        this.emit("changed");
+      }
+      return;
+    }
+
     if (ifaceName === DEVICE_IFACE) {
       const device = this.devices.get(path);
       if (!device) return;
-      if (typeof changed.Connected === "boolean" && changed.Connected !== device.connected) {
-        device.connected = changed.Connected;
+      const wasPrimary = this.primaryDevicePath();
+      if (typeof changed.Connected === "boolean") device.connected = changed.Connected;
+      if (typeof changed.Paired === "boolean") device.paired = changed.Paired;
+      if (typeof changed.Trusted === "boolean") device.trusted = changed.Trusted;
+      if (typeof changed.Alias === "string") device.alias = changed.Alias;
+      if (typeof changed.RSSI === "number") device.rssi = changed.RSSI;
+      if (Array.isArray(changed.UUIDs)) device.uuids = asUuidList(changed.UUIDs);
+      const isPrimary = this.primaryDevicePath();
+      if (isPrimary !== wasPrimary) {
         logger.log(
-          changed.Connected
+          isPrimary
             ? `device connected: ${device.alias} (${device.address})`
             : `device disconnected: ${device.alias} (${device.address})`,
         );
-        this.emit(changed.Connected ? "device-connected" : "device-disconnected");
+        this.emit(isPrimary ? "device-connected" : "device-disconnected", isPrimary);
       }
-      if (typeof changed.Alias === "string") device.alias = changed.Alias;
       this.emit("changed");
       return;
     }
@@ -405,18 +814,33 @@ export class BlueZClient extends EventEmitter {
   }
 
   private async callPlayer(path: string, method: string): Promise<void> {
-    const bus = this.bus;
-    if (!bus) return;
+    const call = await this.deviceInterface(path, PLAYER_IFACE, method);
+    if (!call) return;
     try {
-      const object = await bus.getProxyObject(BLUEZ_SERVICE, path);
-      const player = object.getInterface(PLAYER_IFACE) as ClientInterface;
-      const call = player[method] as (() => Promise<unknown>) | undefined;
-      if (call) {
-        logger.log(`action -> ${method} on ${path}`);
-        await call();
-      }
+      logger.log(`action -> ${method} on ${path}`);
+      await call();
     } catch (error) {
-      logger.error(`${method} failed:`, error instanceof Error ? error.message : error);
+      logger.error(`${method} failed:`, errorMessage(error));
     }
   }
 }
+
+/** An A2DP/AVRCP device that has no MediaPlayer1 yet (phone idle, no track). */
+function playerlessAudioDevice(device: BluezDeviceSnapshot): boolean {
+  return device.uuids.some(
+    (uuid) =>
+      uuid.startsWith("0000110a") || uuid.startsWith("0000110b") || uuid.startsWith("0000110e"),
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function signatureOf(value: unknown): string {
+  if (typeof value === "boolean") return "b";
+  if (typeof value === "number") return "u";
+  return "s";
+}
+
+export { unescapePath };

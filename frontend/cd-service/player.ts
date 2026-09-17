@@ -1,7 +1,10 @@
 import { EventEmitter } from "node:events";
-import os from "node:os";
-import path from "node:path";
-import Mpv from "node-mpv";
+import {
+  defaultMpvFactory,
+  mpvSocketPath,
+  type MpvFactory,
+  type MpvLike,
+} from "../shared/mpv.js";
 import type { DriveSnapshot } from "./drive.js";
 import type { ScannedFile, TocEntry } from "./disc.js";
 import type { CdState, CdTrack } from "./types.js";
@@ -14,6 +17,26 @@ export interface LoadedDisc {
   /** CD-Text album or data-disc volume label, once known */
   title: string | null;
   artist: string | null;
+}
+
+/**
+ * RAM snapshot taken by {@link CdPlayer.suspend}. The disc id is what makes a
+ * resume safe: if a different disc is in the drive when the service wakes up,
+ * the snapshot is discarded instead of seeking into a stream that no longer
+ * exists.
+ */
+export interface CdSnapshot {
+  discId: string;
+  /** Chapter/playlist index of the current track (0-based). */
+  trackIndex: number;
+  /** Stream-absolute position in seconds. */
+  positionSeconds: number;
+  wasPlaying: boolean;
+}
+
+export interface CdPlayerOptions {
+  /** Injectable mpv constructor — tests pass a fake, production uses node-mpv. */
+  createMpv?: MpvFactory;
 }
 
 /** Seconds before the current position restarts the track on "previous". */
@@ -36,7 +59,8 @@ const CHAPTER_SETTLE_MS = 10000;
  */
 export class CdPlayer extends EventEmitter {
   private readonly mpvBinary: string;
-  private mpv: Mpv | null = null;
+  private readonly createMpv: MpvFactory;
+  private mpv: MpvLike | null = null;
   private mpvDevice: string | null = null;
   private disc: LoadedDisc | null = null;
   private tracks: CdTrack[] = [];
@@ -58,10 +82,13 @@ export class CdPlayer extends EventEmitter {
   /** Reloads the currently inserted disc (used after an mpv crash). */
   private reloadDisc: (() => Promise<void>) | null = null;
   private recovering = false;
+  /** Position/disc kept in RAM while the service is suspended. */
+  private snapshot: CdSnapshot | null = null;
 
-  constructor(mpvBinary: string) {
+  constructor(mpvBinary: string, options: CdPlayerOptions = {}) {
     super();
     this.mpvBinary = mpvBinary;
+    this.createMpv = options.createMpv ?? defaultMpvFactory;
   }
 
   isRunning(): boolean {
@@ -223,8 +250,73 @@ export class CdPlayer extends EventEmitter {
     this.tracks = [];
     this.chapterTimes = [];
     this.reloadDisc = null;
+    this.snapshot = null;
     await this.quit();
     this.emitState();
+  }
+
+  /* --------------------------- suspend / resume --------------------------- */
+
+  /**
+   * Keeps the disc identity, track and position in RAM, then releases mpv and
+   * everything it holds (decoder, buffers, the open cdda stream).
+   *
+   * The disc metadata itself is kept so `/api/state` and `/api/events` still
+   * describe what is loaded while the service sleeps.
+   */
+  async suspend(): Promise<CdSnapshot | null> {
+    if (this.disc) {
+      this.snapshot = {
+        discId: this.disc.discId,
+        trackIndex: this.trackIndex,
+        positionSeconds: this.currentTimeSeconds,
+        wasPlaying: this.isPlaying,
+      };
+    }
+    await this.quit();
+    this.isPlaying = false;
+    this.emitState();
+    return this.snapshot;
+  }
+
+  /** The snapshot held in RAM (null when running or no disc was loaded). */
+  getSnapshot(): CdSnapshot | null {
+    return this.snapshot;
+  }
+
+  clearSnapshot(): void {
+    this.snapshot = null;
+  }
+
+  /**
+   * Re-applies the snapshot to a freshly (re)loaded disc. Must be called after
+   * the matching disc content has been loaded via `loadAudioDisc` /
+   * `loadDataDisc`; returns false when there is nothing to restore or the
+   * loaded disc is not the one that was suspended.
+   */
+  async restoreSnapshot(): Promise<boolean> {
+    const snapshot = this.snapshot;
+    if (!snapshot || !this.disc) return false;
+    if (this.disc.discId !== snapshot.discId) return false;
+
+    const index = Math.min(
+      Math.max(snapshot.trackIndex, 0),
+      Math.max(this.tracks.length - 1, 0),
+    );
+    await this.goToTrack(index);
+
+    if (snapshot.positionSeconds > 0) {
+      await this.requireMpv().seek(snapshot.positionSeconds, "absolute");
+      this.currentTimeSeconds = snapshot.positionSeconds;
+    }
+
+    this.isPlaying = snapshot.wasPlaying;
+    if (snapshot.wasPlaying) await this.requireMpv().play();
+    else await this.requireMpv().pause();
+
+    this.snapshot = null;
+    this.emitState();
+    return true;
   }
 
   /**
@@ -424,22 +516,23 @@ export class CdPlayer extends EventEmitter {
     if (this.mpv) return;
 
     this.mpvDevice = device;
-    this.mpv = new Mpv(
+    const mpv = this.createMpv(
       {
         binary: this.mpvBinary,
         audio_only: true,
         time_update: 0.5,
-        socket: path.join(os.tmpdir(), `cd-mpv-${process.pid}.sock`),
+        socket: mpvSocketPath("cd"),
       },
       ["--no-video", `--volume=${this.volume}`]
         .concat(device ? [`--cdda-device=${device}`, "--cdda-cdtext=yes"] : []),
     );
+    this.mpv = mpv;
 
-    this.attachHandlers(this.mpv);
-    await this.mpv.start();
+    this.attachHandlers(mpv);
+    await mpv.start();
   }
 
-  private attachHandlers(mpv: Mpv): void {
+  private attachHandlers(mpv: MpvLike): void {
     // The whole-disc CDDA stream has no playlist movement; the current track
     // is the active mpv CHAPTER. Track it on every position tick (~2 Hz).
     mpv.on("timeposition", (seconds: number) => {
@@ -573,7 +666,7 @@ export class CdPlayer extends EventEmitter {
     }
   }
 
-  private requireMpv(): Mpv {
+  private requireMpv(): MpvLike {
     if (!this.mpv) {
       throw new Error("CD player is not running");
     }

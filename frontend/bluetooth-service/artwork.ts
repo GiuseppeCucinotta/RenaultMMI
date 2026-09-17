@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import * as dbus from "dbus-next";
 import type { MessageBus } from "dbus-next";
-import type { BlueZClient } from "./bluez.js";
+import type { BluezArtworkPort } from "./ports.js";
 import { logger } from "./logger.js";
 
 const OBEX_SERVICE = "org.bluez.obex";
@@ -39,9 +39,16 @@ async function callObex(bus: MessageBus, message: dbus.Message): Promise<dbus.Me
  * bip-avrcp client. When any of those is missing this service stays idle and
  * the UI keeps showing placeholder art.
  */
+/**
+ * Creates the OBEX session bus. Returns `null` when there is none (headless
+ * runs); injectable so tests never touch a real bus.
+ */
+export type ObexBusFactory = () => MessageBus | null;
+
 export class ArtworkService extends EventEmitter {
-  private readonly bluez: BlueZClient;
+  private readonly bluez: BluezArtworkPort;
   private readonly cacheDir: string;
+  private readonly createBus: ObexBusFactory;
   private bus: MessageBus | null = null;
   private available = new Set<string>();
   private session: ObexSession | null = null;
@@ -49,10 +56,11 @@ export class ArtworkService extends EventEmitter {
   private lastRequestedHandle: string | null = null;
   private lastSyncDebug = "";
 
-  constructor(bluez: BlueZClient, cacheDir: string) {
+  constructor(bluez: BluezArtworkPort, cacheDir: string, createBus: ObexBusFactory = defaultObexBus) {
     super();
     this.bluez = bluez;
     this.cacheDir = cacheDir;
+    this.createBus = createBus;
   }
 
   isAvailable(handle: string | null): boolean {
@@ -64,12 +72,14 @@ export class ArtworkService extends EventEmitter {
     await this.scanCache();
 
     try {
-      this.bus = dbus.sessionBus();
-      this.bus.on("error", (error: unknown) => {
+      this.bus = this.createBus();
+      this.bus?.on("error", (error: unknown) => {
         logger.error("obex dbus bus error:", error instanceof Error ? error.message : error);
       });
+      if (!this.bus) logger.log("no OBEX session bus, cover art disabled");
     } catch (error) {
       // No session bus (e.g. headless run without obexd) -> stay idle
+      this.bus = null;
       logger.warn(
         "session bus unavailable, cover art disabled:",
         error instanceof Error ? error.message : error,
@@ -332,6 +342,20 @@ export class ArtworkService extends EventEmitter {
     }
   }
 
+  /** Public shutdown: closes any OBEX session and releases the bus. */
+  async stop(): Promise<void> {
+    await this.teardown();
+    const bus = this.bus;
+    this.bus = null;
+    if (bus) {
+      try {
+        bus.disconnect();
+      } catch {
+        // already gone
+      }
+    }
+  }
+
   private async teardown(): Promise<void> {
     this.lastRequestedHandle = null;
     const session = this.session;
@@ -353,5 +377,13 @@ export class ArtworkService extends EventEmitter {
       }
       logger.log("obex session closed");
     }
+  }
+}
+
+function defaultObexBus(): MessageBus | null {
+  try {
+    return dbus.sessionBus();
+  } catch {
+    return null;
   }
 }

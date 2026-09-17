@@ -1,25 +1,76 @@
 import { EventEmitter } from "node:events";
-import os from "node:os";
 import path from "node:path";
-import Mpv from "node-mpv";
-import { findAlbum, type JukeboxLibrary, type JukeboxPlaybackState } from "./library.js";
+import {
+  defaultMpvFactory,
+  mpvSocketPath,
+  type MpvFactory,
+  type MpvLike,
+} from "../shared/mpv.js";
+import {
+  findAlbum,
+  type JukeboxAlbum,
+  type JukeboxLibrary,
+  type JukeboxPlaybackState,
+} from "./library.js";
+
+/**
+ * Minimal RAM snapshot taken by {@link JukeboxPlayer.suspend}: everything the
+ * player needs to bring the exact same listening position back after mpv (and
+ * its memory) has been released.
+ */
+export interface JukeboxSnapshot {
+  albumId: string;
+  trackIndex: number;
+  /** Track-relative position in seconds. */
+  positionSeconds: number;
+  wasPlaying: boolean;
+}
+
+export interface JukeboxPlayerOptions {
+  /** Injectable mpv constructor — tests pass a fake, production uses node-mpv. */
+  createMpv?: MpvFactory;
+}
+
+export interface StartOptions {
+  /** Launch mpv with playback held (used when restoring a snapshot). */
+  paused?: boolean;
+}
+
+export interface PlayAlbumOptions {
+  /** Load the album without starting playback. */
+  paused?: boolean;
+}
+
+const DEFAULT_VOLUME = 83;
+
+/** Reads mpv's real pause state; assumes playback when the property is unavailable. */
+async function isPaused(mpv: MpvLike): Promise<boolean> {
+  try {
+    return (await mpv.getProperty("pause")) === true;
+  } catch {
+    return false;
+  }
+}
 
 export class JukeboxPlayer extends EventEmitter {
   private readonly musicRoot: string;
   private readonly mpvBinary: string;
-  private mpv: Mpv | null = null;
+  private readonly createMpv: MpvFactory;
+  private mpv: MpvLike | null = null;
   private library: JukeboxLibrary | null = null;
   private albumId: string | null = null;
   private trackIndex = 0;
   private durationSeconds = 0;
   private currentTimeSeconds = 0;
   private isPlaying = false;
-  private volume = 83;
+  private volume = DEFAULT_VOLUME;
+  private snapshot: JukeboxSnapshot | null = null;
 
-  constructor(musicRoot: string, mpvBinary: string) {
+  constructor(musicRoot: string, mpvBinary: string, options: JukeboxPlayerOptions = {}) {
     super();
     this.musicRoot = musicRoot;
     this.mpvBinary = mpvBinary;
+    this.createMpv = options.createMpv ?? defaultMpvFactory;
   }
 
   setLibrary(library: JukeboxLibrary | null): void {
@@ -30,25 +81,31 @@ export class JukeboxPlayer extends EventEmitter {
     return this.mpv?.isRunning() ?? false;
   }
 
-  async start(): Promise<void> {
+  async start(options: StartOptions = {}): Promise<void> {
     if (this.mpv) return;
 
-    this.mpv = new Mpv(
+    // `--pause=yes` makes mpv load the first file without sounding it, so a
+    // paused restore never bleeds a fraction of a second of audio.
+    const args = ["--no-video", `--volume=${this.volume}`];
+    if (options.paused) args.push("--pause=yes");
+
+    const mpv = this.createMpv(
       {
         binary: this.mpvBinary,
         audio_only: true,
         time_update: 0.5,
-        socket: path.join(os.tmpdir(), `jukebox-mpv-${process.pid}.sock`),
+        socket: mpvSocketPath("jukebox"),
       },
-      ["--no-video", `--volume=${this.volume}`],
+      args,
     );
+    this.mpv = mpv;
 
-    this.mpv.on("timeposition", (seconds: number) => {
+    mpv.on("timeposition", (seconds: number) => {
       this.currentTimeSeconds = seconds;
       this.emitState();
     });
 
-    this.mpv.on("status", (status: { property: string; value: unknown }) => {
+    mpv.on("status", (status: { property: string; value: unknown }) => {
       if (status.property === "playlist-pos" && typeof status.value === "number") {
         this.trackIndex = status.value;
         this.emitState();
@@ -61,10 +118,13 @@ export class JukeboxPlayer extends EventEmitter {
       }
     });
 
-    this.mpv.on("started", async () => {
-      this.isPlaying = true;
+    mpv.on("started", async () => {
+      // mpv reports `started` when the FILE is loaded, which also happens while
+      // it is held paused (a snapshot restore). Ask mpv instead of assuming
+      // playback began, otherwise the UI shows "playing" for held audio.
+      this.isPlaying = !(await isPaused(mpv));
       try {
-        const duration = await this.mpv?.getDuration();
+        const duration = await mpv.getDuration();
         if (typeof duration === "number" && duration > 0) {
           this.durationSeconds = duration;
         }
@@ -74,27 +134,27 @@ export class JukeboxPlayer extends EventEmitter {
       this.emitState();
     });
 
-    this.mpv.on("paused", () => {
+    mpv.on("paused", () => {
       this.isPlaying = false;
       this.emitState();
     });
 
-    this.mpv.on("resumed", () => {
+    mpv.on("resumed", () => {
       this.isPlaying = true;
       this.emitState();
     });
 
-    this.mpv.on("stopped", () => {
+    mpv.on("stopped", () => {
       this.isPlaying = false;
       this.emitState();
     });
 
-    this.mpv.on("crashed", () => {
+    mpv.on("crashed", () => {
       this.isPlaying = false;
       this.emitState();
     });
 
-    await this.mpv.start();
+    await mpv.start();
   }
 
   async quit(): Promise<void> {
@@ -105,34 +165,30 @@ export class JukeboxPlayer extends EventEmitter {
     }
   }
 
-  async playAlbum(albumId: string): Promise<void> {
-    if (!this.mpv || !this.mpv.isRunning()) {
-      await this.start();
-    }
-    const mpv = this.requireMpv();
+  /* ------------------------------ playback ------------------------------- */
+
+  async playAlbum(albumId: string, options: PlayAlbumOptions = {}): Promise<void> {
     const album = this.library ? findAlbum(this.library, albumId) : null;
     if (!album || album.songs.length === 0) {
       throw new Error(`Album "${albumId}" not found in library`);
     }
-
-    const paths = album.songs.map((song) => path.join(this.musicRoot, song.filePath));
-
-    this.albumId = albumId;
-    this.trackIndex = 0;
-    this.currentTimeSeconds = 0;
-    this.durationSeconds = album.songs[0].durationSeconds;
-
-    await mpv.clearPlaylist();
-    for (let index = 0; index < paths.length; index++) {
-      if (index === 0) {
-        await mpv.load(paths[index], "replace");
-      } else {
-        await mpv.append(paths[index], "append");
-      }
+    if (!this.mpv || !this.mpv.isRunning()) {
+      await this.start({ paused: options.paused });
     }
-    await mpv.loopPlaylist("inf").catch(() => undefined);
+    if (options.paused) {
+      // Hold playback BEFORE the playlist is loaded: an mpv that is already
+      // running (started with the service) would otherwise sound the first
+      // moments of the file before the pause below lands.
+      await this.requireMpv().pause();
+    }
 
-    this.isPlaying = true;
+    await this.loadAlbumPlaylist(album, albumId);
+    if (options.paused) {
+      await this.requireMpv().pause();
+      this.isPlaying = false;
+    } else {
+      this.isPlaying = true;
+    }
     this.emitState();
   }
 
@@ -144,7 +200,7 @@ export class JukeboxPlayer extends EventEmitter {
     await this.requireMpv().pause();
   }
 
-  async resume(): Promise<void> {
+  async resumePlayback(): Promise<void> {
     await this.requireMpv().resume();
   }
 
@@ -202,9 +258,88 @@ export class JukeboxPlayer extends EventEmitter {
     this.currentTimeSeconds = 0;
     this.durationSeconds = 0;
     this.isPlaying = false;
+    this.snapshot = null;
     this.emitState();
     await this.quit();
   }
+
+  /* --------------------------- suspend / resume --------------------------- */
+
+  /**
+   * Snapshot the listening position in RAM, then kill mpv — the single
+   * biggest memory consumer this service owns (the process itself, its audio
+   * decoder and its buffers).
+   *
+   * The album/track metadata is intentionally kept so `/api/state` keeps
+   * showing the right track while suspended.
+   */
+  async suspend(): Promise<JukeboxSnapshot | null> {
+    if (this.albumId) {
+      this.snapshot = {
+        albumId: this.albumId,
+        trackIndex: this.trackIndex,
+        positionSeconds: this.currentTimeSeconds,
+        wasPlaying: this.isPlaying,
+      };
+    }
+    await this.quit();
+    this.isPlaying = false;
+    this.emitState();
+    return this.snapshot;
+  }
+
+  /**
+   * Relaunch mpv and jump back to the snapshot position. Returns false when
+   * there is nothing to restore (never played, or the album vanished from the
+   * library after a rescan).
+   */
+  async resume(): Promise<boolean> {
+    const snapshot = this.snapshot;
+    if (!snapshot) return false;
+
+    const album = this.library ? findAlbum(this.library, snapshot.albumId) : null;
+    if (!album || album.songs.length === 0) {
+      this.snapshot = null;
+      return false;
+    }
+
+    // Always restore paused: returning to the Jukebox source must never start
+    // audio on its own, whatever the album was doing before it was suspended.
+    // (`wasPlaying` stays in the snapshot as a record of that state; the
+    // listener presses play when they are ready.)
+    await this.start({ paused: true });
+    const mpv = this.requireMpv();
+    await mpv.pause(); // hold before the load, so nothing bleeds out
+    await this.loadAlbumPlaylist(album, snapshot.albumId);
+
+    const track = Math.min(Math.max(snapshot.trackIndex, 0), album.songs.length - 1);
+    if (track > 0) await mpv.jump(track);
+    this.trackIndex = track;
+    this.durationSeconds = album.songs[track]?.durationSeconds ?? this.durationSeconds;
+
+    if (snapshot.positionSeconds > 0) {
+      await mpv.seek(snapshot.positionSeconds, "absolute");
+    }
+    this.currentTimeSeconds = snapshot.positionSeconds;
+
+    this.isPlaying = false;
+    await mpv.pause();
+
+    this.snapshot = null;
+    this.emitState();
+    return true;
+  }
+
+  /** The snapshot currently held in RAM (null when running or never played). */
+  getSnapshot(): JukeboxSnapshot | null {
+    return this.snapshot;
+  }
+
+  clearSnapshot(): void {
+    this.snapshot = null;
+  }
+
+  /* --------------------------------- state -------------------------------- */
 
   getState(): JukeboxPlaybackState {
     const album = this.albumId && this.library ? findAlbum(this.library, this.albumId) : null;
@@ -222,11 +357,33 @@ export class JukeboxPlayer extends EventEmitter {
     };
   }
 
+  /* -------------------------------- private ------------------------------- */
+
+  private async loadAlbumPlaylist(album: JukeboxAlbum, albumId: string): Promise<void> {
+    const mpv = this.requireMpv();
+    const paths = album.songs.map((song) => path.join(this.musicRoot, song.filePath));
+
+    this.albumId = albumId;
+    this.trackIndex = 0;
+    this.currentTimeSeconds = 0;
+    this.durationSeconds = album.songs[0]?.durationSeconds ?? 0;
+
+    await mpv.clearPlaylist();
+    for (let index = 0; index < paths.length; index++) {
+      if (index === 0) {
+        await mpv.load(paths[index], "replace");
+      } else {
+        await mpv.append(paths[index], "append");
+      }
+    }
+    await mpv.loopPlaylist("inf").catch(() => undefined);
+  }
+
   private emitState(): void {
     this.emit("state", this.getState());
   }
 
-  private requireMpv(): Mpv {
+  private requireMpv(): MpvLike {
     if (!this.mpv) {
       throw new Error("Player is not running");
     }
