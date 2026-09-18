@@ -25,13 +25,17 @@ export function MediaPlayer({
   const displayName = trackName || t("media.noMedia");
   const displaySource = source || t("media.noSource");
 
+  const SAFE_TITLE_LENGTH = 12;
+  const shouldScroll = displayName.length > SAFE_TITLE_LENGTH && !reduceMotion;
+  const marqueeDuration = `${Math.max(4, displayName.length * 0.45)}s`;
+
   return (
-    <div className="flex-[0_0_25%] h-full min-w-62.5">
+    <div className="flex-[0_0_25%] h-full min-w-62.5 overflow-hidden">
       <motion.div
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 26 }}
-        className="h-full"
+        className="h-full overflow-hidden"
       >
         <Card className="relative h-full rounded-[20px] overflow-hidden border-0 bg-black/20">
           {/* Album art background */}
@@ -47,9 +51,21 @@ export function MediaPlayer({
             }}
           />
 
-          <div className="absolute bottom-0 left-0 right-0 z-1 h-2/5 rounded-b-2xl bg-linear-to-t from-black/60 to-black/5 backdrop-blur-2xl" />
+          {/* Progressive bottom blur — each layer only fades in further down,
+              so sharpness decreases gradually instead of a hard blurred band. */}
+          <div
+            aria-hidden
+            className="absolute bottom-0 left-0 right-0 z-1 h-2/5 overflow-hidden rounded-b-[20px]"
+          >
+            <div className="absolute inset-0 backdrop-blur-[2px] [mask-image:linear-gradient(to_bottom,transparent_0%,black_32%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,black_32%)]" />
+            <div className="absolute inset-0 backdrop-blur-[5px] [mask-image:linear-gradient(to_bottom,transparent_22%,black_55%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_22%,black_55%)]" />
+            <div className="absolute inset-0 backdrop-blur-[12px] [mask-image:linear-gradient(to_bottom,transparent_42%,black_75%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_42%,black_75%)]" />
+            <div className="absolute inset-0 backdrop-blur-2xl [mask-image:linear-gradient(to_bottom,transparent_58%,black_88%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_58%,black_88%)]" />
+            {/* Legibility gradient over the blur */}
+            <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/25 to-transparent" />
+          </div>
 
-          <CardContent className="relative z-2 flex flex-col justify-end h-full px-5 py-5">
+          <CardContent className="relative z-2 flex flex-col justify-end h-full px-5 py-5 min-w-0">
             {/* Spacer — pushes content to bottom area */}
             <div className="flex-1" />
 
@@ -58,11 +74,30 @@ export function MediaPlayer({
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.12 }}
-              className="flex items-center justify-between gap-3"
+              className="flex items-center justify-between gap-3 min-w-0"
             >
-              <h2 className="min-w-0 truncate text-5xl font-bold text-warm-500 leading-none tracking-tight">
-                {displayName}
-              </h2>
+              {shouldScroll ? (
+                <div className="relative flex-1 min-w-0 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+                  <div
+                    className="flex w-max animate-marquee whitespace-nowrap"
+                    style={{ animationDuration: marqueeDuration }}
+                  >
+                    <span className="pr-10 text-5xl font-bold text-warm-500 leading-none tracking-tight">
+                      {displayName}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="pr-10 text-5xl font-bold text-warm-500 leading-none tracking-tight"
+                    >
+                      {displayName}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <h2 className="flex-1 min-w-0 truncate text-5xl font-bold text-warm-500 leading-none tracking-tight">
+                  {displayName}
+                </h2>
+              )}
               <div className="flex shrink-0 items-center gap-3">
                 <motion.button
                   onClick={onPlayPause}
@@ -90,7 +125,7 @@ export function MediaPlayer({
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.24 }}
-              className="mt-2 text-sm font-medium text-warm-100"
+              className="mt-2 truncate text-sm font-medium text-warm-100"
             >
               {displaySource}
             </motion.p>
