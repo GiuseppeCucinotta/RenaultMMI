@@ -1,5 +1,5 @@
 import { useRotaryNavigation } from "@/hooks/useRotaryNavigation";
-import { MusicApp } from "@/components/media-view";
+import { MusicApp } from "@/components/views/media";
 import type { MediaViewProps } from "@/types/media";
 
 export function MediaView({
