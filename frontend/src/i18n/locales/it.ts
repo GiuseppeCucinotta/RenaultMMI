@@ -82,7 +82,6 @@ export const it: Messages = {
       bluetoothOff: "Il Bluetooth è disattivato su questo sistema.",
       connectTo: "Connetti a {name}",
       forgetDevice: "Rimuovi {name}",
-      found: "{count} dispositivo/i trovato/i",
     },
     pairing: {
       title: "Richiesta di associazione",

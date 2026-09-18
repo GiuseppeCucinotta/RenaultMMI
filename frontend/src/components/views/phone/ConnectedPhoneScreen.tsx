@@ -1,4 +1,5 @@
 import { Battery, BatteryLow, BatteryMedium, Bluetooth, Signal, SignalHigh, SignalLow } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useI18n } from "@/i18n";
 import type { BluetoothDevice } from "@/types/bluetooth";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ interface ConnectedPhoneScreenProps {
  */
 export function ConnectedPhoneScreen({ device, onDisconnect, busy }: ConnectedPhoneScreenProps) {
   const { t } = useI18n();
+  const reduceMotion = useReducedMotion();
 
   const placeholders: { key: string; title: string }[] = [
     { key: "contacts", title: t("phone.connected.contacts") },
@@ -28,25 +30,43 @@ export function ConnectedPhoneScreen({ device, onDisconnect, busy }: ConnectedPh
 
   return (
     <div className="flex h-full w-full flex-col gap-5 pr-2 pt-1">
-      <ConnectionSummary
-        device={device}
-        busy={busy}
-        onDisconnect={onDisconnect}
-      />
+      <motion.div
+        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 240, damping: 26 }}
+      >
+        <ConnectionSummary
+          device={device}
+          busy={busy}
+          onDisconnect={onDisconnect}
+        />
+      </motion.div>
 
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4">
-        {placeholders.map((card) => (
-          <SelectableCard
+        {placeholders.map((card, index) => (
+          <motion.div
             key={card.key}
-            disabled
-            ariaLabel={card.title}
-            className="flex flex-col justify-between px-5 py-4"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              type: "spring",
+              stiffness: 280,
+              damping: 24,
+              delay: reduceMotion ? 0 : 0.12 + index * 0.06,
+            }}
+            className="min-h-0"
           >
-            <span className="text-sm font-medium tracking-wide text-amber-100/70">
-              {card.title}
-            </span>
-            <span className="text-xs text-amber-100/35">{t("phone.connected.comingSoon")}</span>
-          </SelectableCard>
+            <SelectableCard
+              disabled
+              ariaLabel={card.title}
+              className="flex h-full flex-col justify-between px-5 py-4"
+            >
+              <span className="text-sm font-medium tracking-wide text-amber-100/70">
+                {card.title}
+              </span>
+              <span className="text-xs text-amber-100/35">{t("phone.connected.comingSoon")}</span>
+            </SelectableCard>
+          </motion.div>
         ))}
       </div>
     </div>

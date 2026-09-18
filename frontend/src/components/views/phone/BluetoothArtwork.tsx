@@ -15,10 +15,6 @@ interface BluetoothArtworkProps {
 export function BluetoothArtwork({ className, alt }: BluetoothArtworkProps) {
   return (
     <div className={cn("relative flex items-center justify-center", className)}>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-full bg-amber-500/25 blur-[70px]"
-      />
       <img
         src={phoneImage}
         alt={alt}

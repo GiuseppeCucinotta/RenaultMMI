@@ -80,7 +80,6 @@ export const en = {
       bluetoothOff: "Bluetooth is turned off on this system.",
       connectTo: "Connect to {name}",
       forgetDevice: "Forget {name}",
-      found: "{count} device(s) found",
     },
     pairing: {
       title: "Pairing request",

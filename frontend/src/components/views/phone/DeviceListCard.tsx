@@ -1,8 +1,9 @@
-import { Loader2, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import type { BluetoothDevice } from "@/types/bluetooth";
 import { DeviceRow } from "./DeviceRow";
+import { useDragToScroll } from "./useDragToScroll";
 
 interface DeviceListCardProps {
   devices: BluetoothDevice[];
@@ -32,10 +33,11 @@ export function DeviceListCard({
   onDismissError,
 }: DeviceListCardProps) {
   const { t } = useI18n();
+  const listRef = useDragToScroll<HTMLDivElement>();
   const hasError = error != null && error.deviceId == null;
 
   return (
-    <div className="flex h-full flex-col rounded-3xl border border-amber-500/20 bg-amber-950/40 px-7 py-6 backdrop-blur-sm">
+    <div className="flex h-full max-h-[21rem] min-h-0 w-full flex-col self-center overflow-hidden rounded-3xl border border-amber-500/20 bg-linear-to-br from-[#F59E0B]/10 to-[#09090B]/20 px-7 py-6 backdrop-blur-sm">
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-medium text-2xl tracking-wide text-amber-50">
           {t("phone.devices.title")}
@@ -64,9 +66,12 @@ export function DeviceListCard({
         <p className="mt-4 text-sm text-red-300/90">{error?.message}</p>
       ) : null}
 
-      <div className="mt-5 min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={listRef}
+        className="mt-5 min-h-0 flex-1 cursor-grab touch-pan-y overflow-y-auto active:cursor-grabbing [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {devices.length === 0 ? (
-          <EmptyState discovering={discovering} adapterPowered={adapterPowered} />
+          <EmptyState adapterPowered={adapterPowered} />
         ) : (
           <ul className="flex flex-col">
             {devices.map((device, index) => (
@@ -84,30 +89,13 @@ export function DeviceListCard({
           </ul>
         )}
       </div>
-
-      {discovering ? (
-        <p className="mt-3 flex shrink-0 items-center gap-2 text-xs text-amber-200/60">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {t("phone.devices.searching")}
-        </p>
-      ) : null}
     </div>
   );
 }
 
-function EmptyState({
-  discovering,
-  adapterPowered,
-}: {
-  discovering: boolean;
-  adapterPowered: boolean;
-}) {
+function EmptyState({ adapterPowered }: { adapterPowered: boolean }) {
   const { t } = useI18n();
-  const key = !adapterPowered
-    ? "phone.devices.bluetoothOff"
-    : discovering
-      ? "phone.devices.searching"
-      : "phone.devices.empty";
+  const key = !adapterPowered ? "phone.devices.bluetoothOff" : "phone.devices.empty";
   return (
     <div className="flex h-full min-h-[8rem] items-center justify-center px-2">
       <p className="text-center text-sm text-amber-100/50">{t(key)}</p>
