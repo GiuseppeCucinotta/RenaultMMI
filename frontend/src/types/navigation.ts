@@ -1,1 +1,1 @@
-export type NavId = "home" | "phone" | "media";
+export type NavId = "home" | "phone" | "media" | "settings";

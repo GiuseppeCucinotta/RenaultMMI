@@ -4,6 +4,7 @@ import App from './App.tsx'
 import { JukeboxProvider } from './context/JukeboxProvider'
 import { BluetoothProvider } from './context/BluetoothProvider'
 import { CdProvider } from './context/CdProvider'
+import { SettingsProvider } from './context/SettingsProvider'
 import { I18nProvider } from './i18n'
 import './index.css'
 
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <BluetoothProvider>
         <JukeboxProvider>
           <CdProvider>
-            <App />
+            <SettingsProvider>
+              <App />
+            </SettingsProvider>
           </CdProvider>
         </JukeboxProvider>
       </BluetoothProvider>

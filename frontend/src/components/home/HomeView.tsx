@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useRotaryNavigation } from "@/hooks/useRotaryNavigation";
+import type { AppItem } from "@/data/apps";
 import { MediaPlayer, AppsGrid, CarStatus } from ".";
 
 export interface HomeViewProps {
@@ -9,6 +10,8 @@ export interface HomeViewProps {
   albumArt?: string | null;
   onPlayPause?: () => void;
   onSkip?: () => void;
+  /** App tiles to show; the shell decides which ones carry an `onClick`. */
+  apps?: AppItem[];
 }
 
 export function HomeView({
@@ -18,6 +21,7 @@ export function HomeView({
   albumArt,
   onPlayPause,
   onSkip,
+  apps,
 }: HomeViewProps) {
   const reduceMotion = useReducedMotion();
   const { containerRef } = useRotaryNavigation({
@@ -40,7 +44,7 @@ export function HomeView({
         onPlayPause={onPlayPause}
         onSkip={onSkip}
       />
-      <AppsGrid />
+      <AppsGrid apps={apps} />
       <CarStatus />
     </motion.div>
   );

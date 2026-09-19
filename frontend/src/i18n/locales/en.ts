@@ -116,6 +116,40 @@ export const en = {
     title: "Car",
     wireframeAlt: "Vehicle wireframe",
   },
+  settings: {
+    title: "Settings",
+    placeholder: "PLACEHOLDER",
+    empty: "No settings in this category yet",
+    unavailable: "Settings service unavailable",
+    category: {
+      vehicle: { label: "Vehicle", title: "Vehicle" },
+      audio: { label: "Audio", title: "Audio" },
+      connectivity: { label: "Connectivity", title: "Connectivity" },
+      display: { label: "Display", title: "Display" },
+      system: { label: "System", title: "System" },
+    },
+    vehicle: {
+      demoToggle: { label: "Vehicle demo setting" },
+    },
+    audio: {
+      demoLevel: { label: "Audio demo level" },
+    },
+    connectivity: {
+      demoToggle: { label: "Connectivity demo setting" },
+      demoRetries: { label: "Demo retries" },
+    },
+    display: {
+      demoTheme: {
+        label: "Demo theme",
+        dark: "Dark",
+        light: "Light",
+        auto: "Auto",
+      },
+    },
+    system: {
+      demoBuildLocked: { label: "Demo build lock" },
+    },
+  },
 } as const;
 
 type DeepStringify<T> = {

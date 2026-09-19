@@ -118,4 +118,38 @@ export const it: Messages = {
     title: "Auto",
     wireframeAlt: "Sagoma del veicolo",
   },
+  settings: {
+    title: "Impostazioni",
+    placeholder: "PLACEHOLDER",
+    empty: "Nessuna impostazione in questa categoria",
+    unavailable: "Servizio impostazioni non disponibile",
+    category: {
+      vehicle: { label: "Veicolo", title: "Veicolo" },
+      audio: { label: "Audio", title: "Audio" },
+      connectivity: { label: "Connettività", title: "Connettività" },
+      display: { label: "Display", title: "Display" },
+      system: { label: "Sistema", title: "Sistema" },
+    },
+    vehicle: {
+      demoToggle: { label: "Impostazione demo veicolo" },
+    },
+    audio: {
+      demoLevel: { label: "Livello demo audio" },
+    },
+    connectivity: {
+      demoToggle: { label: "Impostazione demo connettività" },
+      demoRetries: { label: "Tentativi demo" },
+    },
+    display: {
+      demoTheme: {
+        label: "Tema demo",
+        dark: "Scuro",
+        light: "Chiaro",
+        auto: "Automatico",
+      },
+    },
+    system: {
+      demoBuildLocked: { label: "Blocco build demo" },
+    },
+  },
 };

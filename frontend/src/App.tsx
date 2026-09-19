@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Navbar } from "@/components/Navbar";
 import { Background } from "@/components/Background";
 import { HomeView } from "@/components/home";
 import { PhoneView } from "@/components/views/PhoneView";
 import { MediaView } from "@/components/views/MediaView";
+import { SettingsView } from "@/components/settings/SettingsView";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { VolumeIndicator } from "@/components/VolumeIndicator";
 import type { NavId } from "@/types/navigation";
 import { NAV_ORDER } from "@/constants/navigation";
 import type { CurrentPlaybackFeed, SourceFeed } from "@/types/media";
+import { DEFAULT_APPS } from "@/data/apps";
 import { DEFAULT_PLAYBACK_FEED, DEFAULT_SOURCE_FEED } from "@/data/media";
 import { useNowPlaying } from "@/hooks/useNowPlaying";
 import { useEntertainmentVolume } from "@/hooks/useEntertainmentVolume";
@@ -20,6 +22,18 @@ function App() {
   const [sourceFeed, setSourceFeed] = useState<SourceFeed>(DEFAULT_SOURCE_FEED);
   const nowPlaying = useNowPlaying(sourceFeed.selectedSourceId, sourceFeed.sources);
   const { setActiveSource } = useEntertainmentVolume();
+
+  /**
+   * The Home grid's app tiles are generic: each carries an optional `onClick`.
+   * Only the tiles this shell can actually open get one, so `AppsGrid` stays a
+   * dumb renderer and the routing knowledge lives here.
+   */
+  const homeApps = useMemo(() => {
+    const openSettings = () => setActiveView("settings");
+    return DEFAULT_APPS.map((app) =>
+      app.id === "settings" ? { ...app, onClick: openSettings } : app,
+    );
+  }, []);
 
   useEffect(() => {
     const ipc = window.ipcRenderer;
@@ -76,7 +90,7 @@ function App() {
   const renderView = () => {
     switch (activeView) {
       case "home":
-        return <HomeView {...nowPlaying} />;
+        return <HomeView {...nowPlaying} apps={homeApps} />;
       case "phone":
         return <PhoneView />;
       case "media":
@@ -87,6 +101,8 @@ function App() {
             onSelectSource={handleSelectSource}
           />
         );
+      case "settings":
+        return <SettingsView />;
       default:
         return <HomeView {...nowPlaying} />;
     }
