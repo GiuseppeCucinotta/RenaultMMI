@@ -1,0 +1,20 @@
+{
+  "name": "renault-mmi",
+  "private": true,
+  "version": "0.0.0",
+  "description": "RenaultMMI monorepo: CAN decoder, Node services and the Electron infotainment UI",
+  "workspaces": [
+    "services",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run build --workspace services && concurrently -k -n services,app -c blue,green \"npm run watch --workspace services\" \"npm run dev --workspace frontend\"",
+    "build": "npm run build --workspace services && npm run build --workspace frontend",
+    "test": "npm run test --workspace services && npm run test --workspace frontend",
+    "lint": "npm run lint --workspace frontend",
+    "typecheck": "npm run typecheck --workspace services && npm run typecheck --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { watchDevArtifacts, type WatchFn } from "../electron/dev-watch.js";
-import { sleep } from "./support.js";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface FakeWatcher {
   path: string;

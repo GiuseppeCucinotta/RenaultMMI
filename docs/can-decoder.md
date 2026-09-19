@@ -1,13 +1,13 @@
-# Backend
+# CAN decoder
 
-The backend is a C application that runs on the Raspberry Pi 5 and reads the
-vehicle CAN bus. It decodes the frames that interest the infotainment system
-and publishes the resulting vehicle state over UDP, so the frontend can
-consume it.
+The CAN decoder (`can-decoder/`) is a C application that runs on the Raspberry
+Pi 5 and reads the vehicle CAN bus. It decodes the frames that interest the
+infotainment system and publishes the resulting vehicle state over UDP, so the
+frontend can consume it.
 
 ## What it does
 
-The backend listens on a CAN interface (`vcan0` by default, the virtual CAN
+The decoder listens on a CAN interface (`vcan0` by default, the virtual CAN
 bus used during development). Every raw frame that matches a known message is
 decoded into a compact `VehiclePayloadState` structure, and a snapshot of that
 structure is sent over UDP to `127.0.0.1:4000` roughly 60 times per second.
@@ -83,7 +83,7 @@ fields. The frontend must unpack this byte layout to read the telemetry.
 
 The decode/encode layer is generated from `grand_modus.dbc` by
 [cantools](https://cantools.github.io/) version 41.4.1, installed in
-`backend/venv/`. The generated files are `include/grand_modus.h` and
+`can-decoder/venv/`. The generated files are `include/grand_modus.h` and
 `src/grand_modus.c` — do not edit them by hand. If the DBC changes, regenerate
 them.
 
@@ -116,10 +116,11 @@ The `VehiclePayloadState` struct carries the following fields:
 
 ## Build
 
-The backend uses a `Makefile` with C11, `-Wall -Wextra` and pthreads:
+The decoder uses a `Makefile` with C11, `-Wall -Wextra` and pthreads. Run it
+from the `can-decoder/` folder:
 
 ```bash
-make           # compile into build/ and produce the backend binary
+make           # compile into build/ and produce the can-decoder binary
 make clean     # remove build/ and the binary
 ```
 
@@ -137,7 +138,7 @@ canplayer -I test/urbano.log        # urban driving simulation
 # or send a single frame by hand:
 cansend vcan0 181#1910000000000000
 
-./backend
+./can-decoder
 ```
 
 The `test/` folder contains the log generators `modus_sim_city.py` and
@@ -150,7 +151,7 @@ frontend debug window (see [Music view](music.md)).
 ## Current limitations
 
 - Only the first five messages are decoded; SAFETY (0x651) is not routed.
-- The backend has no command-line options; interface name, port and refresh
+- The decoder has no command-line options; interface name, port and refresh
   rate are compile-time constants.
 - The frontend does not yet parse the UDP payload into the main UI. The only
   consumer today is the debug window.

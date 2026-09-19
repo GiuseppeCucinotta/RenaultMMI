@@ -2,7 +2,7 @@
 CC       := gcc
 CFLAGS   := -Wall -Wextra -std=c11 -pthread
 CPPFLAGS := -Iinclude
-TARGET   := backend
+TARGET   := can-decoder
 BUILD    := build
 
 # ── Sorgenti e oggetti ────────────────────────────────────────

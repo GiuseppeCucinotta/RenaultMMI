@@ -4,7 +4,7 @@ export type {
   JukeboxLibrary,
   JukeboxPlaybackState,
   JukeboxSong,
-} from "../../shared/jukebox-types";
+} from "../../../services/shared/jukebox-types";
 
 export interface JukeboxHealth {
   ok: boolean;

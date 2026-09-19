@@ -11,6 +11,15 @@
     "dist",
     "dist-electron"
   ],
+  // The service workspace builds to `services/dist`; copy it outside the asar
+  // so Electron can spawn the bundles from `resources/services/<name>/index.js`
+  // (see SERVICES_DIST in electron/main.ts).
+  "extraResources": [
+    {
+      "from": "../services/dist",
+      "to": "services"
+    }
+  ],
   "mac": {
     "target": [
       "dmg"

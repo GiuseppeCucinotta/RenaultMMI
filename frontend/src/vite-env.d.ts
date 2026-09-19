@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { SystemInfo } from "../shared/system-info";
+import type { SystemInfo } from "../../services/shared/system-info";
 
 declare global {
   interface DebugAPI {
@@ -36,6 +36,10 @@ declare global {
     getEndpoint: () => Promise<{ baseUrl: string }>;
   }
 
+  interface SettingsApi {
+    getEndpoint: () => Promise<{ baseUrl: string }>;
+  }
+
   interface EntertainmentVolumeState {
     volume: number;
     activeSourceId: string;
@@ -54,6 +58,7 @@ declare global {
     jukebox?: JukeboxApi;
     bluetooth?: BluetoothApi;
     cd?: CdApi;
+    settings?: SettingsApi;
     entertainmentAudio?: EntertainmentAudioApi;
   }
 }

@@ -5,7 +5,7 @@ export interface LogMessage {
   content: string;
 }
 
-export type { SystemInfo } from "../../../shared/system-info";
+export type { SystemInfo } from "../../../../services/shared/system-info";
 
 export interface AppInfo {
   name: string;

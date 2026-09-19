@@ -1,5 +1,5 @@
 import { ipcRenderer, contextBridge } from "electron";
-import type { SystemInfo } from "../shared/system-info";
+import type { SystemInfo } from "../../services/shared/system-info";
 
 interface IpcRendererLike {
   on(channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void): void;
@@ -66,6 +66,11 @@ contextBridge.exposeInMainWorld("bluetooth", {
 contextBridge.exposeInMainWorld("cd", {
   getEndpoint: async (): Promise<{ baseUrl: string }> =>
     ipcRenderer.invoke("cd:get-endpoint") as Promise<{ baseUrl: string }>,
+});
+
+contextBridge.exposeInMainWorld("settings", {
+  getEndpoint: async (): Promise<{ baseUrl: string }> =>
+    ipcRenderer.invoke("settings:get-endpoint") as Promise<{ baseUrl: string }>,
 });
 
 contextBridge.exposeInMainWorld("entertainmentAudio", {

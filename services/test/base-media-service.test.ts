@@ -136,6 +136,26 @@ test("returns 404 for unknown routes and 405 for the wrong method", async () => 
   });
 });
 
+test("the CORS preflight advertises PATCH", async () => {
+  // PATCH is not a CORS-simple method, so the browser preflights it. In
+  // `npm run dev` the renderer (:5173) and a service (:4xxx) are different
+  // origins, so a missing allow-method makes every settings write fail there
+  // while tests over direct fetch keep passing — hence this explicit guard.
+  await withService(undefined, async (_service, base) => {
+    const preflight = await fetch(`${base}/api/values/anything`, {
+      method: "OPTIONS",
+      headers: { "Access-Control-Request-Method": "PATCH" },
+    });
+    assert.equal(preflight.status, 204);
+
+    const allowed = (preflight.headers.get("access-control-allow-methods") ?? "")
+      .split(",")
+      .map((method) => method.trim().toUpperCase());
+    assert.ok(allowed.includes("PATCH"), `PATCH missing from "${allowed.join(", ")}"`);
+    assert.equal(preflight.headers.get("access-control-allow-headers"), "Content-Type");
+  });
+});
+
 test("maps thrown errors onto status codes", async () => {
   await withService(undefined, async (_service, base) => {
     const boom = await apiPost<{ error: string }>(`${base}/api/boom`, {});

@@ -7,7 +7,11 @@ import { createLogger, errorMessage, type Logger } from "./logger.js";
 
 export const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  // PATCH is listed because the Settings service writes with PATCH, which is not
+  // a CORS-simple method: the browser preflights it. In `npm run dev` the
+  // renderer (Vite, :5173) is a different origin from the service (:4400), so
+  // omitting PATCH here silently broke every settings write in browser dev.
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 

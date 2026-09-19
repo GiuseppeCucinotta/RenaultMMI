@@ -1,5 +1,6 @@
 import { defineConfig, mergeConfig } from "vite";
 import path from "node:path";
+import { createRequire } from "node:module";
 import electron from "vite-plugin-electron";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -7,14 +8,43 @@ import tailwindcss from "@tailwindcss/vite";
 const ROOT = process.cwd();
 const esmodule = true;
 
+const require = createRequire(path.join(ROOT, "package.json"));
+// vite-plugin-electron resolves `electron` from its own location, but npm
+// workspaces hoist the plugin to the repo root while `electron` stays under
+// frontend/node_modules. Resolve the package from here and hand the absolute
+// entry path to the plugin's startup() so the launch never depends on layout.
+const ELECTRON_ENTRY = require.resolve("electron");
+
+interface ElectronOnstartArgs {
+  reload: () => void;
+  startup: (
+    argv?: string[],
+    options?: import("node:child_process").SpawnOptions,
+    customElectronPkg?: string,
+  ) => Promise<void>;
+}
+
 // vite-plugin-electron only launches Electron from whichever entry finishes
-// building LAST (its onstart). The jukebox service is the biggest bundle and
-// usually finishes last, so a no-op onstart there would leave the app never
-// opening. Routing every entry through the guarded `reload()` (launches
-// Electron on first build, hot-reloads the renderer afterwards) makes the
-// startup order-independent.
-function startOrReload(args: { reload: () => void }) {
-  args.reload();
+// building LAST (its onstart). Both entries share this guarded starter so the
+// startup order does not matter: the first call launches Electron, later calls
+// only hot-reload the renderer.
+//
+// The four service bundles are built separately by the `services` workspace
+// (`services/scripts/build.mjs`); Electron spawns them from `services/dist`.
+let electronLaunched = false;
+
+function startOrReload(args: ElectronOnstartArgs): void {
+  if (!electronLaunched) {
+    electronLaunched = true;
+    void args.startup([".", "--no-sandbox"], {}, ELECTRON_ENTRY);
+    return;
+  }
+  // `reload()` falls back to a bare `startup()` when the app is not running yet,
+  // which would resolve the plugin-relative `electron` again — only reload once
+  // the child exists.
+  if ((process as unknown as { electronApp?: unknown }).electronApp) {
+    args.reload();
+  }
 }
 
 function buildMainProcesses() {
@@ -46,43 +76,7 @@ function buildMainProcesses() {
     onstart: startOrReload,
   };
 
-  // Standalone jukebox service (scan + mpv playback + HTTP/SSE API).
-  const jukebox = {
-    entry: { index: path.join(ROOT, "jukebox-service/index.ts") },
-    onstart: startOrReload,
-    vite: {
-      build: {
-        outDir: "dist-electron/jukebox",
-        minify: false,
-      },
-    },
-  };
-
-  // Standalone bluetooth service (BlueZ D-Bus bridge + HTTP/SSE API).
-  const bluetooth = {
-    entry: { index: path.join(ROOT, "bluetooth-service/index.ts") },
-    onstart: startOrReload,
-    vite: {
-      build: {
-        outDir: "dist-electron/bluetooth",
-        minify: false,
-      },
-    },
-  };
-
-  // Standalone CD service (optical drive watcher + mpv playback + HTTP/SSE API).
-  const cd = {
-    entry: { index: path.join(ROOT, "cd-service/index.ts") },
-    onstart: startOrReload,
-    vite: {
-      build: {
-        outDir: "dist-electron/cd",
-        minify: false,
-      },
-    },
-  };
-
-  return electron([main, jukebox, bluetooth, cd, preload]);
+  return electron([main, preload]);
 }
 
 export default defineConfig({

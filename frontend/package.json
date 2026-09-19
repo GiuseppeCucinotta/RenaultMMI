@@ -6,12 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
+    "typecheck": "tsc",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "tsx": "tsx",
-    "test": "node --import tsx --test test/*.test.ts",
-    "bluetooth:debug": "tsx bluetooth-service/index.ts",
-    "cd:debug": "tsx cd-service/index.ts"
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-slider": "^1.3.6",
@@ -20,15 +19,8 @@
     "@tailwindcss/vite": "^4.1.17",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dbus-next": "^0.10.2",
-    "dotenv": "^17.2.3",
-    "fast-glob": "^3.3.3",
     "framer-motion": "^13.0.0",
-    "fs": "^0.0.1-security",
     "lucide-react": "^0.555.0",
-    "music-metadata": "^11.10.6",
-    "node-mpv": "^2.0.0-beta.2",
-    "p-limit": "^7.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^3.4.0",

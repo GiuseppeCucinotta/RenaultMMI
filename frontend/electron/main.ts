@@ -14,6 +14,12 @@ export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
+// The services are a separate workspace package. In dev they build into
+// `services/dist`; the packaged app copies that tree to `resources/services`.
+export const SERVICES_DIST = app.isPackaged
+  ? path.join(process.resourcesPath, 'services')
+  : path.resolve(__dirname, '../../services/dist')
+
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
@@ -21,6 +27,7 @@ let debugWin: BrowserWindow | null
 let jukeboxService: ChildProcess | null = null
 let bluetoothService: ChildProcess | null = null
 let cdService: ChildProcess | null = null
+let settingsService: ChildProcess | null = null
 
 const udpProbe = createUdpProbe()
 
@@ -29,6 +36,8 @@ const JUKEBOX_MUSIC_ROOT = process.env.JUKEBOX_MUSIC_ROOT
 const BLUETOOTH_PORT = process.env.BLUETOOTH_PORT ?? '4200'
 const CD_PORT = process.env.CD_PORT ?? '4300'
 const CD_DEVICE = process.env.CD_DEVICE
+const SETTINGS_PORT = process.env.SETTINGS_PORT ?? '4400'
+const SETTINGS_STORE_PATH = process.env.SETTINGS_STORE_PATH
 
 const entertainment = new EntertainmentVolumeController({
   jukeboxPort: Number(JUKEBOX_PORT),
@@ -123,6 +132,10 @@ ipcMain.handle('cd:get-endpoint', () => ({
   baseUrl: `http://127.0.0.1:${CD_PORT}`,
 }))
 
+ipcMain.handle('settings:get-endpoint', () => ({
+  baseUrl: `http://127.0.0.1:${SETTINGS_PORT}`,
+}))
+
 ipcMain.on('debug-media-feed', (_event, feed: unknown) => {
   win?.webContents.send('debug-media-feed', feed)
 })
@@ -134,7 +147,7 @@ ipcMain.on('debug-media-source', (_event, sourceId: unknown) => {
 function startJukeboxService() {
   if (jukeboxService && !jukeboxService.killed) return
 
-  const entry = path.join(__dirname, 'jukebox', 'index.js')
+  const entry = path.join(SERVICES_DIST, 'jukebox', 'index.js')
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
@@ -168,7 +181,7 @@ function stopJukeboxService() {
 function startBluetoothService() {
   if (bluetoothService && !bluetoothService.killed) return
 
-  const entry = path.join(__dirname, 'bluetooth', 'index.js')
+  const entry = path.join(SERVICES_DIST, 'bluetooth', 'index.js')
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
@@ -199,7 +212,7 @@ function stopBluetoothService() {
 function startCdService() {
   if (cdService && !cdService.killed) return
 
-  const entry = path.join(__dirname, 'cd', 'index.js')
+  const entry = path.join(SERVICES_DIST, 'cd', 'index.js')
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
@@ -228,6 +241,40 @@ function stopCdService() {
     cdService.kill()
   }
   cdService = null
+}
+
+function startSettingsService() {
+  if (settingsService && !settingsService.killed) return
+
+  const entry = path.join(SERVICES_DIST, 'settings', 'index.js')
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    SETTINGS_PORT,
+  }
+  if (SETTINGS_STORE_PATH) {
+    env.SETTINGS_STORE_PATH = SETTINGS_STORE_PATH
+  }
+
+  settingsService = spawn(process.execPath, [entry], {
+    env,
+    stdio: 'ignore',
+  })
+
+  settingsService.on('error', (error) => {
+    console.error('[settings] failed to spawn service:', error.message)
+    settingsService = null
+  })
+  settingsService.on('exit', () => {
+    settingsService = null
+  })
+}
+
+function stopSettingsService() {
+  if (settingsService && !settingsService.killed) {
+    settingsService.kill()
+  }
+  settingsService = null
 }
 
 /** A dev rebuild must not race the old child for the port: wait for its exit. */
@@ -264,7 +311,7 @@ function watchDevBundles() {
 
   const serviceTarget = (name: string, child: () => ChildProcess | null, start: () => void) => ({
     name,
-    path: path.join(MAIN_DIST, name),
+    path: path.join(SERVICES_DIST, name),
     match: (file: string) => file === 'index.js',
     onChange: () => restartService(name, child(), start),
   })
@@ -280,6 +327,7 @@ function watchDevBundles() {
       serviceTarget('jukebox', () => jukeboxService, startJukeboxService),
       serviceTarget('bluetooth', () => bluetoothService, startBluetoothService),
       serviceTarget('cd', () => cdService, startCdService),
+      serviceTarget('settings', () => settingsService, startSettingsService),
     ],
     {
       onError: (name, error) =>
@@ -378,6 +426,7 @@ app.whenReady().then(() => {
   startJukeboxService()
   startBluetoothService()
   startCdService()
+  startSettingsService()
   watchDevBundles()
   createWindow()
 })
@@ -386,6 +435,7 @@ app.on('will-quit', () => {
   stopJukeboxService()
   stopBluetoothService()
   stopCdService()
+  stopSettingsService()
 })
 
 export { createDebugWindow, toggleDebugWindow }
