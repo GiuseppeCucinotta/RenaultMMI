@@ -54,7 +54,7 @@ builds a JSON library, and plays albums through `mpv`.
 
 ```
 Electron main process (electron/main.ts)
-  └─ spawns the jukebox service (dist-electron/jukebox/index.js)
+  └─ spawns the jukebox service (services/dist/jukebox/index.js)
        └─ HTTP + SSE API on http://127.0.0.1:4100 (JUKEBOX_PORT)
             └─ renderer consumes it via src/services/jukebox.ts + useJukebox hook
 ```
@@ -70,7 +70,7 @@ It exposes the service base URL to the renderer through the IPC channel
 `jukebox:get-endpoint` (bridged as `window.jukebox.getEndpoint()` in
 `electron/preload.ts`). When the app quits, the service is terminated.
 
-### Service (`jukebox-service/`)
+### Service (`services/jukebox-service/`)
 
 | File | Responsibility |
 | --- | --- |
@@ -161,20 +161,19 @@ disabled in `MediaView`, so the CoverFlow owns wheel and keyboard input.
 
 ### Building and running
 
-The service is bundled by `vite-plugin-electron` as a third entry (see
-`vite.config.ts`), which produces `dist-electron/jukebox/`. Every electron
-entry routes its `onstart` through a shared `startOrReload` helper: the plugin
-only launches Electron from whichever entry finishes building last, so a no-op
-handler on the largest (jukebox) bundle would leave the app never opening.
+The service lives in the `services` workspace and is bundled by
+`services/scripts/build.mjs` into `services/dist/jukebox/`. Electron resolves it
+through `SERVICES_DIST` (`../../services/dist` in dev, `resources/services` when
+packaged) and spawns it as a child process.
 
 ```bash
-npm run dev      # dev server + Electron + jukebox service
-npm run build    # typecheck, build renderer + electron entries
+npm run dev                          # services watch + Vite dev server + Electron
+npm run build --workspace services   # build services/dist/<name>/index.js
 ```
 
 To test the service without the app:
 
 ```bash
-node dist-electron/jukebox/index.js
+node services/dist/jukebox/index.js
 curl http://127.0.0.1:4100/api/health
 ```

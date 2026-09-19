@@ -58,7 +58,7 @@ BlueZ happily keeps several phones connected at once, so "last connected wins":
 when a phone connects it becomes primary and the other connected phones are
 disconnected. That keeps media and calls unambiguous without a settings screen.
 
-## Service (`bluetooth-service/`)
+## Service (`services/bluetooth-service/`)
 
 | File | Responsibility |
 | --- | --- |
@@ -184,11 +184,11 @@ off on this system" instead of an empty list.
 
 ## Testing without hardware
 
-- `npm test` runs the unit suites: device classification/filtering, the pairing
+- `npm test --workspace services` runs the unit suites: device classification/filtering, the pairing
   state machine and error mapping, the primary-phone policy, state mapping and
-  the service routes. They use `test/fake-bluez.ts`, a structural fake of
+  the service routes. They use `services/test/fake-bluez.ts`, a structural fake of
   `BlueZClient`, so no D-Bus and no phone are needed.
-- `node scripts/fake-bluetooth-service.mjs [port]` serves a fake state (and
+- `node frontend/scripts/fake-bluetooth-service.mjs [port]` (from the repo root) serves a fake state (and
   SSE) for UI work, including a pairing prompt that resolves after a delay.
   Point the renderer at it with `VITE_BLUETOOTH_BASE_URL`:
 

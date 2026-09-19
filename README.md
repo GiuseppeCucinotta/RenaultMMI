@@ -5,10 +5,13 @@ and a Waveshare 8.8" 1920x480 touch display. It reads the vehicle CAN bus,
 decodes the relevant signals and presents them through an Electron-based
 interface, together with local media playback.
 
-The project is split into two codebases:
+The repo is an npm workspace with three areas:
 
-- **`backend/`** — a C application that listens on the CAN bus and streams the
-  decoded vehicle state over UDP.
+- **`can-decoder/`** — a C application that listens on the CAN bus and streams
+  the decoded vehicle state over UDP.
+- **`services/`** — the Node.js backends (jukebox, bluetooth, cd, settings)
+  spawned by the app, plus their `shared/` library. Each service is a loopback
+  HTTP + SSE server.
 - **`frontend/`** — the user interface: React, Electron, Vite and Tailwind.
 
 ## Documentation
@@ -19,7 +22,7 @@ The detailed documentation is kept in the `docs/` folder:
 | --- | --- |
 | [Music view](/docs/music.md) | The media view and the Jukebox player. |
 | [Bluetooth source](/docs/bluetooth.md) | Phone playback, metadata and cover art over AVRCP. |
-| [Backend](/docs/backend.md) | What the CAN reader does and how it works. |
+| [CAN decoder](/docs/can-decoder.md) | What the CAN reader does and how it works. |
 
 ## Current status
 
@@ -29,17 +32,23 @@ The detailed documentation is kept in the `docs/` folder:
 - The **Bluetooth** source is implemented: playback control, track metadata
   and cover art (AVRCP 1.6) from a connected phone.
 - The **CD** and **FM** sources are placeholders.
-- The **backend** decodes the engine, gearbox, climate, brakes and lights and
+- The **CAN decoder** decodes the engine, gearbox, climate, brakes and lights and
   doors messages and publishes them over UDP. The frontend does not parse that
   stream into the main UI yet; only the debug window shows the raw frames.
 
 ## Getting started
 
+All commands are run from the repo root; npm workspaces install the `services`
+and `frontend` packages together.
+
 ```bash
-npm install
-npm run dev      # Vite dev server + Electron + jukebox service
-npm run lint     # ESLint strict
-npm run build    # typecheck, build renderer + electron entries, package
+npm install          # install both workspaces
+npm run dev          # service bundles in watch mode + Vite dev server + Electron
+npm run test         # services and frontend test suites
+npm run lint         # ESLint strict (frontend)
+npm run build        # build the services, then typecheck + bundle the frontend
+
+cd can-decoder && make   # build the C CAN decoder → can-decoder/can-decoder
 ```
 
 ## Requirements
@@ -81,7 +90,7 @@ Phones: Android 12+ (on many devices set Developer Options -> AVRCP version ->
 1.6) and iOS 13+ work out of the box. Without BlueZ >= 5.79 / obexd everything
 else still works, but the UI shows a fallback cover instead of artwork.
 
-### Backend
+### CAN decoder
 
 | Requirement | Version | Purpose |
 | --- | --- | --- |
