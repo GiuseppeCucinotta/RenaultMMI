@@ -1,5 +1,11 @@
+node_modules/
 build/
-compile_commands.json
-.cache/
+dist/
 dist-electron/
 release/
+compile_commands.json
+.cache/
+.npm-cache/
+*.tsbuildinfo
+.preview/
+.dsh/
