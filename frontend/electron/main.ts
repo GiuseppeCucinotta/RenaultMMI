@@ -336,6 +336,8 @@ function watchDevBundles() {
   )
 }
 
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1920,
@@ -343,7 +345,7 @@ function createWindow() {
     frame: false,
     resizable: false,
     maximizable: false,
-    fullscreen: true,
+    fullscreen: !isDev,
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
