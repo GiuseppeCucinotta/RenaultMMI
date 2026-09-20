@@ -17,7 +17,7 @@ Here's the photo of the design I did: @./Trip Computer.png
 
 - Log the data from the vehicle UDP packets that arrives for the consumpion.
 - Stores this data in the most simple database which has to be fast and put near-zero overhead to the system. (For dev purpose, we have to containerize it; on the production system, we have it exposed without any container that add overhead).
-- Build the most fastest and light weight backend that can calculate this data from the DB and send them to the frontend Trip Computer app. Let's value different languages together; idk if I want to have all in TS or this project can use other languages. My dream would be to use C whenever it's possible. Help me making this choice when you make the Q&A on this part: give me different options because I geniuly don't know what is better to do, to use only TS or other things
+- Build the most fastest and light weight backend that can calculate this data from the DB and send them to the frontend Trip Computer app. Build it in TS.
 - Since it's a trip computer, the settings must be in the Vehicle section of the Settings app. You must add settings for this app there.
 - The backend should understand if the fuel level of the car changed significantly, for example it grew for more then 2 liters and ask the user on the startup via a global notification (that should live in the entirety app) at what price per liter it did the fueling. Spec this feature into another spec so another subagent can implement it. A global notification service that can be used by every app through the whole system.  
 
