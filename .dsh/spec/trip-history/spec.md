@@ -5,12 +5,12 @@ The Trip History application provides route archiving, historical driving analys
 ## Frontend
 
 * **Trip List View:**
-* Displays historical trips in reverse chronological order (newest first).
+* Displays historical trips in reverse chronological order (newest first). The list must be scrollable.
 * Each list item card displays: date/time, total distance (km), total driving duration, total fuel burned (L), average consumption (L/100km or km/L), and estimated trip cost (currency).
 * Multi-stage journeys (road trips) appear as a single clustered parent card with an expandable dropdown showing individual legs/stages.
 * Quick action to manually merge two adjacent trips or split a trip into multiple stages.
-* Every trip can be expanded to show more details
-* The selected trip shows in the map
+* Every trip can be expanded to show more details, so it's expandable.
+* The selected trip shows in the map.
 
 * **Trip Detail / Map View:**
 * An interactive map on the right side displaying the full GPS trajectory (breadcrumb trail) of the selected trip.
@@ -18,6 +18,7 @@ The Trip History application provides route archiving, historical driving analys
 * Summary stats bar detailing start/end timestamps, idle time, moving time, average speed, max speed, and total cost calculated from fuel pricing records.
 * Offline capability: Map tiles must render from local storage without requiring active internet connectivity.
 
+Frontend reference: @./Trip History.png
 
 ## Backend
 
@@ -103,3 +104,9 @@ CREATE TABLE trip_coordinates (
 * **Edge Cases:**
 * GPS fix dropouts (tunnel driving, cold start) must extrapolate distance using vehicle wheel-speed/odometer CAN packets rather than dropping distance calculation.
 * Sudden shutdown/power loss: Unclosed trips must recover gracefully on next boot by closing open records using the last known timestamp.
+
+## Shared behaviour
+
+In both the two apps (trip-computer and trip-history) both settings and same logic should be shared. Changing the unit for consumption in the system general settings (in the vehicle section for example) should change it for both apps.
+
+This last part of spec must be removed when you refined this spec to make it understandable to the subagent.
