@@ -11,9 +11,13 @@ import type {
   SettingsCategoryId,
 } from "../settings-service/types.js";
 
-/** The five shipped ids — the fixture cannot rely on the production constant. */
+/**
+ * The shipped ids, spelled out on purpose: the fixture must not import the
+ * production constant, or the test would follow a change it is meant to notice.
+ */
 const PRODUCTION_CATEGORY_IDS: readonly SettingsCategoryId[] = [
   "vehicle",
+  "trip",
   "audio",
   "connectivity",
   "display",

@@ -40,6 +40,10 @@ declare global {
     getEndpoint: () => Promise<{ baseUrl: string }>;
   }
 
+  interface TripApi {
+    getEndpoint: () => Promise<{ baseUrl: string }>;
+  }
+
   interface EntertainmentVolumeState {
     volume: number;
     activeSourceId: string;
@@ -59,6 +63,7 @@ declare global {
     bluetooth?: BluetoothApi;
     cd?: CdApi;
     settings?: SettingsApi;
+    trip?: TripApi;
     entertainmentAudio?: EntertainmentAudioApi;
   }
 }

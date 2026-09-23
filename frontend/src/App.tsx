@@ -5,6 +5,8 @@ import { HomeView } from "@/components/home";
 import { PhoneView } from "@/components/views/PhoneView";
 import { MediaView } from "@/components/views/MediaView";
 import { SettingsView } from "@/components/settings/SettingsView";
+import { TripComputerView } from "@/components/views/trip-computer/TripComputerView";
+import { TripHistoryView } from "@/components/views/trip-history/TripHistoryView";
 import { DebugPanel } from "@/components/debug/DebugPanel";
 import { VolumeIndicator } from "@/components/VolumeIndicator";
 import type { NavId } from "@/types/navigation";
@@ -29,10 +31,18 @@ function App() {
    * dumb renderer and the routing knowledge lives here.
    */
   const homeApps = useMemo(() => {
-    const openSettings = () => setActiveView("settings");
-    return DEFAULT_APPS.map((app) =>
-      app.id === "settings" ? { ...app, onClick: openSettings } : app,
-    );
+    // Each tile's id maps to the view it opens. Only tiles the shell can
+    // actually open get an `onClick`, so `AppsGrid` stays a dumb renderer and
+    // the routing knowledge lives here.
+    const targets: Record<string, NavId> = {
+      fuel: "trip-computer",
+      "nav-history": "trip-history",
+      settings: "settings",
+    };
+    return DEFAULT_APPS.map((app) => {
+      const target = targets[app.id];
+      return target ? { ...app, onClick: () => setActiveView(target) } : app;
+    });
   }, []);
 
   useEffect(() => {
@@ -103,6 +113,10 @@ function App() {
         );
       case "settings":
         return <SettingsView />;
+      case "trip-computer":
+        return <TripComputerView />;
+      case "trip-history":
+        return <TripHistoryView />;
       default:
         return <HomeView {...nowPlaying} />;
     }
@@ -112,7 +126,7 @@ function App() {
     <div className="min-h-screen w-full flex justify-start p-10 relative">
       <Background />
       <Navbar activeId={activeView} onNavigate={setActiveView} onGearScroll={handleGearScroll} />
-      <main className="flex-1 ml-10 flex flex-col">
+      <main className="ml-10 flex min-w-0 flex-1 flex-col">
         <div className="flex-1 relative">
           {renderView()}
         </div>

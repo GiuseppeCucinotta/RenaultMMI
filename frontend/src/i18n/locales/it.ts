@@ -6,6 +6,48 @@ export const it: Messages = {
     phone: "Telefono",
     media: "Media",
   },
+  trip: {
+    computer: {
+      title: "Computer di viaggio",
+      card: {
+        spent: "Spesa finora",
+        avgConsumption: "Consumo medio",
+        liters: "Litri consumati",
+        distance: "Distanza totale",
+      },
+      vsLastPeriod: "{delta} rispetto al periodo precedente",
+      noComparison: "Nessun periodo precedente",
+      noData: "Nessun dato per questo periodo",
+      graphLabel: "Distanza e consumo nel periodo selezionato",
+      graphCaption: "{count} intervalli {granularity}",
+      granularity: { hour: "orari", day: "giornalieri", week: "settimanali" },
+      staleData: "ultima lettura disponibile",
+    },
+    history: {
+      title: "Storico viaggi",
+      selectTrip: "Seleziona un viaggio per mostrare la mappa",
+      empty: "Nessun viaggio registrato",
+      legs: "{count} tappe",
+      roadTrip: "Viaggio lungo",
+      active: "In corso",
+      loading: "Caricamento viaggio",
+      stats: {
+        start: "Inizio",
+        end: "Fine",
+        idle: "Sosta",
+        moving: "In movimento",
+        avgSpeed: "Velocità media",
+        maxSpeed: "Velocità max",
+        cost: "Costo",
+      },
+      merge: "Unisci al successivo",
+      split: "Dividi qui",
+      noRoute: "Nessun percorso registrato per questo viaggio",
+      mapLabel: "Percorso del viaggio selezionato",
+      startMarker: "Partenza",
+      endMarker: "Arrivo",
+    },
+  },
   apps: {
     fuel: "Carburante",
     equalizer: "Equalizzatore",
@@ -125,6 +167,7 @@ export const it: Messages = {
     unavailable: "Servizio impostazioni non disponibile",
     category: {
       vehicle: { label: "Veicolo", title: "Veicolo" },
+      trip: { label: "Viaggi", title: "Viaggi" },
       audio: { label: "Audio", title: "Audio" },
       connectivity: { label: "Connettività", title: "Connettività" },
       display: { label: "Display", title: "Display" },
@@ -132,6 +175,41 @@ export const it: Messages = {
     },
     vehicle: {
       demoToggle: { label: "Impostazione demo veicolo" },
+    },
+    trip: {
+      consumptionUnit: {
+        label: "Unità di consumo",
+        help: "Come viene mostrato il consumo nelle app dei viaggi",
+        l_per_100km: "L/100 km",
+        km_per_l: "km/L",
+      },
+      currency: {
+        label: "Valuta",
+        help: "Usata per stimare quanto è costato il carburante",
+        EUR: "Euro",
+        USD: "Dollaro statunitense",
+        GBP: "Sterlina",
+      },
+      homeGeofenceLat: {
+        label: "Latitudine di casa",
+        help: "Fermarsi qui chiude il viaggio invece di iniziare una tappa",
+      },
+      homeGeofenceLon: {
+        label: "Longitudine di casa",
+        help: "Fermarsi qui chiude il viaggio invece di iniziare una tappa",
+      },
+      homeGeofenceRadiusM: {
+        label: "Raggio di casa",
+        help: "Quanto vicino a casa conta come arrivo",
+      },
+      stageDwellMinutes: {
+        label: "Sosta prima di una nuova tappa",
+        help: "Per quanto il motore deve restare spento per chiudere una tappa",
+      },
+      layoverHours: {
+        label: "Sosta lunga del viaggio",
+        help: "Una sosta più lunga chiude il viaggio invece di aggiungere una tappa",
+      },
     },
     audio: {
       demoLevel: { label: "Livello demo audio" },

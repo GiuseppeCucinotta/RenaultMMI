@@ -1,5 +1,5 @@
 /**
- * Browser-dev fallback: mirrors the five schema entries the service ships, so
+ * Browser-dev fallback: mirrors the schema entries the service ships, so
  * `npm run dev` in a plain browser (no Electron, no service) still renders the
  * view. Structure only — identical shape to `GET /api/state`.
  */
@@ -35,6 +35,44 @@ export const MOCK_SETTINGS_STATE: SettingsState = {
           default: 5,
           min: 0,
           max: 10,
+          step: 1,
+        },
+      ],
+    },
+    {
+      id: "trip",
+      labelKey: "settings.category.trip.label",
+      titleKey: "settings.category.trip.title",
+      icon: { kind: "asset", src: "src/assets/icons/homeIcons/fuelConsumptionIcon.svg" },
+      fields: [
+        {
+          id: "consumptionUnit",
+          kind: "select",
+          labelKey: "settings.trip.consumptionUnit.label",
+          default: "l_per_100km",
+          options: [
+            { value: "l_per_100km", labelKey: "settings.trip.consumptionUnit.l_per_100km" },
+            { value: "km_per_l", labelKey: "settings.trip.consumptionUnit.km_per_l" },
+          ],
+        },
+        {
+          id: "currency",
+          kind: "select",
+          labelKey: "settings.trip.currency.label",
+          default: "EUR",
+          options: [
+            { value: "EUR", labelKey: "settings.trip.currency.EUR" },
+            { value: "USD", labelKey: "settings.trip.currency.USD" },
+            { value: "GBP", labelKey: "settings.trip.currency.GBP" },
+          ],
+        },
+        {
+          id: "stageDwellMinutes",
+          kind: "stepper",
+          labelKey: "settings.trip.stageDwellMinutes.label",
+          default: 15,
+          min: 1,
+          max: 120,
           step: 1,
         },
       ],
@@ -99,6 +137,7 @@ export const MOCK_SETTINGS_STATE: SettingsState = {
   ],
   values: {
     vehicle: { demoToggle: true },
+    trip: { consumptionUnit: "l_per_100km", currency: "EUR", stageDwellMinutes: 15 },
     audio: { demoLevel: 5 },
     connectivity: { demoToggle: false, demoRetries: 2 },
     display: { demoTheme: "dark" },

@@ -1,6 +1,6 @@
 /**
- * The category registry: the only module that knows the five shipped category
- * ids and their rail order. Everything downstream (routes, store, renderer) is
+ * The category registry: the only module that knows the shipped category ids
+ * and their rail order. Everything downstream (routes, store, renderer) is
  * driven by the registry, never by a hardcoded id (I1).
  *
  * A field may only gate on a sibling of its own category: `showWhen` is
@@ -14,6 +14,7 @@ import type { CategoryDef, SettingsCategoryId, SettingsValues } from "./types.js
 /** The rail order, top to bottom. Production's complete allowed id set. */
 export const CATEGORY_ORDER: readonly SettingsCategoryId[] = [
   "vehicle",
+  "trip",
   "audio",
   "connectivity",
   "display",

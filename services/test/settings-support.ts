@@ -9,6 +9,7 @@ import { audioCategory } from "../settings-service/categories/audio.js";
 import { connectivityCategory } from "../settings-service/categories/connectivity.js";
 import { displayCategory } from "../settings-service/categories/display.js";
 import { systemCategory } from "../settings-service/categories/system.js";
+import { tripCategory } from "../settings-service/categories/trip.js";
 import { vehicleCategory } from "../settings-service/categories/vehicle.js";
 import { createRegistry, type SettingsRegistry } from "../settings-service/registry.js";
 import { SettingsService, type SettingsServiceOptions } from "../settings-service/service.js";
@@ -16,9 +17,10 @@ import type { CategoryDef } from "../settings-service/types.js";
 import { FIXTURE_ALLOWED_IDS, testFixtureCategory } from "./settings-fixture.js";
 import type { ApiResult } from "./support.js";
 
-/** The five shipped categories, in `CATEGORY_ORDER`. */
+/** The shipped categories, in `CATEGORY_ORDER`. */
 export const PRODUCTION_CATEGORIES: CategoryDef[] = [
   vehicleCategory,
+  tripCategory,
   audioCategory,
   connectivityCategory,
   displayCategory,
@@ -27,7 +29,7 @@ export const PRODUCTION_CATEGORIES: CategoryDef[] = [
 
 export const PRODUCTION_CATEGORY_IDS = PRODUCTION_CATEGORIES.map((category) => category.id);
 
-/** The production registry plus the throwaway sixth test category. */
+/** The production registry plus the throwaway extra test category. */
 export const FIXTURE_REGISTRY: SettingsRegistry = createRegistry(
   [...PRODUCTION_CATEGORIES, testFixtureCategory],
   FIXTURE_ALLOWED_IDS,

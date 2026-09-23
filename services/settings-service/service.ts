@@ -24,6 +24,7 @@ import { audioCategory } from "./categories/audio.js";
 import { connectivityCategory } from "./categories/connectivity.js";
 import { displayCategory } from "./categories/display.js";
 import { systemCategory } from "./categories/system.js";
+import { tripCategory } from "./categories/trip.js";
 import { vehicleCategory } from "./categories/vehicle.js";
 import type { SettingsConfig } from "./config.js";
 import { fieldDefaults, normalizeFieldValue } from "./fields.js";
@@ -73,6 +74,7 @@ export class SettingsService extends BaseMediaService<SettingsState> {
       options.registry ??
       createRegistry([
         vehicleCategory,
+        tripCategory,
         audioCategory,
         connectivityCategory,
         displayCategory,

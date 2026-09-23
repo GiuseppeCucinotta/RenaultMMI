@@ -4,6 +4,48 @@ export const en = {
     phone: "Phone",
     media: "Media",
   },
+  trip: {
+    computer: {
+      title: "Trip Computer",
+      card: {
+        spent: "Spent so far",
+        avgConsumption: "Avg. consumption",
+        liters: "Liter consumed",
+        distance: "Total distance",
+      },
+      vsLastPeriod: "{delta} vs last period",
+      noComparison: "No previous period",
+      noData: "No data for this period",
+      graphLabel: "Distance and consumption over the selected period",
+      graphCaption: "{count} {granularity} buckets",
+      granularity: { hour: "hourly", day: "daily", week: "weekly" },
+      staleData: "showing the last reading",
+    },
+    history: {
+      title: "Trip History",
+      selectTrip: "Select a trip to show map",
+      empty: "No trips recorded yet",
+      legs: "{count} legs",
+      roadTrip: "Road trip",
+      active: "In progress",
+      loading: "Loading trip",
+      stats: {
+        start: "Start",
+        end: "End",
+        idle: "Idle",
+        moving: "Moving",
+        avgSpeed: "Avg. speed",
+        maxSpeed: "Max. speed",
+        cost: "Cost",
+      },
+      merge: "Merge with next",
+      split: "Split here",
+      noRoute: "No route recorded for this trip",
+      mapLabel: "Route of the selected trip",
+      startMarker: "Start",
+      endMarker: "End",
+    },
+  },
   apps: {
     fuel: "Fuel",
     equalizer: "Equalizer",
@@ -123,6 +165,7 @@ export const en = {
     unavailable: "Settings service unavailable",
     category: {
       vehicle: { label: "Vehicle", title: "Vehicle" },
+      trip: { label: "Trips", title: "Trips" },
       audio: { label: "Audio", title: "Audio" },
       connectivity: { label: "Connectivity", title: "Connectivity" },
       display: { label: "Display", title: "Display" },
@@ -130,6 +173,41 @@ export const en = {
     },
     vehicle: {
       demoToggle: { label: "Vehicle demo setting" },
+    },
+    trip: {
+      consumptionUnit: {
+        label: "Consumption unit",
+        help: "How fuel economy is shown across the trip apps",
+        l_per_100km: "L/100 km",
+        km_per_l: "km/L",
+      },
+      currency: {
+        label: "Currency",
+        help: "Used to estimate what your fuel cost",
+        EUR: "Euro",
+        USD: "US dollar",
+        GBP: "Pound sterling",
+      },
+      homeGeofenceLat: {
+        label: "Home latitude",
+        help: "A stop here ends a journey instead of starting a new stage",
+      },
+      homeGeofenceLon: {
+        label: "Home longitude",
+        help: "A stop here ends a journey instead of starting a new stage",
+      },
+      homeGeofenceRadiusM: {
+        label: "Home radius",
+        help: "How close to home counts as arriving",
+      },
+      stageDwellMinutes: {
+        label: "Stop before a new stage",
+        help: "How long the engine must be off to end a driving stage",
+      },
+      layoverHours: {
+        label: "Road trip layover",
+        help: "A longer stop than this ends the journey instead of adding a leg",
+      },
     },
     audio: {
       demoLevel: { label: "Audio demo level" },

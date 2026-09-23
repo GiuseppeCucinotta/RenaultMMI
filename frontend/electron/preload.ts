@@ -73,6 +73,11 @@ contextBridge.exposeInMainWorld("settings", {
     ipcRenderer.invoke("settings:get-endpoint") as Promise<{ baseUrl: string }>,
 });
 
+contextBridge.exposeInMainWorld("trip", {
+  getEndpoint: async (): Promise<{ baseUrl: string }> =>
+    ipcRenderer.invoke("trip:get-endpoint") as Promise<{ baseUrl: string }>,
+});
+
 contextBridge.exposeInMainWorld("entertainmentAudio", {
   getState: (): Promise<EntertainmentVolumeState> =>
     ipcRenderer.invoke("entertainment:get-state") as Promise<EntertainmentVolumeState>,

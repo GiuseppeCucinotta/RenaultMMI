@@ -91,13 +91,13 @@ function rejectsFixture(overrides: Partial<CategoryDef>, pattern: RegExp): void 
   );
 }
 
-test("registry accepts the five shipped categories in order", () => {
+test("registry accepts the shipped categories in order", () => {
   const registry = createRegistry(PRODUCTION_CATEGORIES);
   assert.deepEqual(
     registry.categories.map((category) => category.id),
     [...PRODUCTION_CATEGORY_IDS],
   );
-  assert.equal(registry.byId.size, 5);
+  assert.equal(registry.byId.size, PRODUCTION_CATEGORY_IDS.length);
   assert.equal(registry.byId.get("audio")?.titleKey, "settings.category.audio.title");
 });
 
@@ -317,7 +317,7 @@ test("GET /api/state exposes schema plus values, GET /api/health is the settings
       `${base}/api/state`,
     );
     assert.equal(state.status, 200);
-    assert.equal(state.body.categories.length, 5);
+    assert.equal(state.body.categories.length, PRODUCTION_CATEGORY_IDS.length);
     assert.deepEqual(state.body.values.vehicle, { demoToggle: true });
 
     const health = await apiGet<HealthBody>(`${base}/api/health`);

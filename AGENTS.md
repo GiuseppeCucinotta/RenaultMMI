@@ -36,8 +36,8 @@ Target hardware: Raspberry Pi 5 driving a Waveshare 8.8" **1920×480 portrait** 
 can-decoder/                C daemon — CAN bus in, UDP out (see §4)
 services/                   Node backends — built to services/dist, spawned by Electron
   package.json              @renault-mmi/services: service deps + build/watch/test scripts
-  scripts/build.mjs         bundles the four services with vite-plugin-electron's build()
-  tsconfig.json             strict, includes shared + the four services + test
+  scripts/build.mjs         bundles the five services with vite-plugin-electron's build()
+  tsconfig.json             strict, includes shared + the five services + test
   jukebox-service/          standalone Node service :4100 — mpv + music library
     service.ts              JukeboxService extends BaseMediaService (HTTP + routes)
     player.ts               mpv wrapper + suspend/resume snapshot
@@ -57,6 +57,15 @@ services/                   Node backends — built to services/dist, spawned by
     registry.ts             CATEGORY_ORDER + schema validation (cross-category refs throw)
     fields.ts store.ts      field normalisation / per-category JSON persistence
     categories/*.ts         one CategoryDef per macrocategory — add a setting here only
+  trip-service/             standalone Node service :4500 — trips, fuel, trajectories (SQLite)
+    service.ts routes.ts    TripService + the HTTP surface (thin; no arithmetic)
+    ports.ts                TelemetrySource / LocationSource / SettingsPort — the whole
+                            hardware surface; no CAN and no GPS adapter exists yet
+    trip/engine.ts          ingestion + the segmentation state machine
+    trip/{consumption,cost,buckets,trajectory}.ts   pure calculation modules
+    query.ts                the read model: windows, trends, buckets, trip lists, map payload
+    store/{schema,store}.ts node:sqlite DDL + migrations, TripWriter, the read model
+    telemetry/simulator.ts  deterministic dev drive generator (dev-only)
   shared/                   imported by services + (types) the renderer
     service-http.ts         HTTP helpers, SSE hub + **BaseMediaService**
     logger.ts               createLogger(scope) — the one service logger
@@ -80,7 +89,7 @@ frontend/
       ui/                   shadcn primitives (button, card, slider, tabs, switch, segmented)
     context/                provider + context pairs: jukebox, bluetooth, cd, settings
     hooks/                  use* data + input hooks (see §5.4)
-    services/               HTTP/SSE clients for the four local services
+    services/               HTTP/SSE clients for the five local services
     data/                   static defaults + *.mock.ts browser fallbacks
     types/  constants/  lib/  styles/  i18n/  assets/  references/
   test/                     renderer/electron node:test suites (see §5.7)
@@ -90,7 +99,7 @@ frontend/
 
 **Workspaces:** the root `package.json` declares the `services` and `frontend` workspaces; run `npm install` once at the repo root. `npm run dev` builds the services, then watches them alongside the frontend.
 **Import alias:** `@/* → src/*`. Declared in **both** `frontend/tsconfig.json` and `frontend/vite.config.ts` — keep them in sync.
-**tsconfig includes:** `frontend/` = `src`, `electron`, `test`; `services/` = `shared`, the four `*-service/`, `test`. The renderer and `electron/preload.ts` type-import `services/shared/*` by relative path.
+**tsconfig includes:** `frontend/` = `src`, `electron`, `test`; `services/` = `shared`, the five `*-service/`, `test`. The renderer and `electron/preload.ts` type-import `services/shared/*` by relative path.
 **Gitignored:** `node_modules/`, `build/`, `dist/`, `dist-electron/`, `release/`, `compile_commands.json`, `.cache/`, `.npm-cache/`.
 
 ---
@@ -109,16 +118,17 @@ frontend/
 │ Electron main (electron/main.ts)                          │
 │  • main window 1920×480 frameless fullscreen              │
 │  • debug window on Ctrl+Shift+D or #/debug → udp-probe    │
-│  • spawns jukebox/bluetooth/cd/settings services (ELECTRON_RUN_AS_NODE)
+│  • spawns jukebox/bluetooth/cd/settings/trip services (ELECTRON_RUN_AS_NODE)
 │  • owns entertainment volume                              │
 └───────┬──────────────────────────────────────────────────┘
         │ IPC (contextBridge → window.*)
         ▼
 ┌──────────────────────────────────────────────────────────┐
 │ React renderer (src/)                                     │
-│  views: home | phone | media | settings  debug: #/debug   │
+│  views: home|phone|media|settings        debug: #/debug   │
+│  full-screen apps: settings, trip-computer, trip-history   │
 │  ← HTTP + SSE → 127.0.0.1:{4100 jukebox, 4200 bt,         │
-│                            4300 cd, 4400 settings}        │
+│                    4300 cd, 4400 settings, 4500 trip}     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -156,13 +166,13 @@ React 18 + Electron 40 + Vite 7 + Tailwind v4 + shadcn/ui + framer-motion. TypeS
 
 - Creates the main window (1920×480, frameless, non-resizable, fullscreen) and, lazily, the debug window.
 - **Ctrl+Shift+D** is intercepted via `before-input-event` in the **main** window → `toggleDebugWindow()`. The debug window loads the renderer with hash `#/debug`.
-- `app.whenReady` starts all four services; `will-quit` stops them.
+- `app.whenReady` starts all five services; `will-quit` stops them.
 
 **IPC surface** (handlers in `main.ts`, exposed by `preload.ts`):
 
 | Channel | Direction | Purpose |
 | --- | --- | --- |
-| `jukebox:get-endpoint` / `bluetooth:get-endpoint` / `cd:get-endpoint` / `settings:get-endpoint` | invoke | `{ baseUrl }` for each service |
+| `jukebox:get-endpoint` / `bluetooth:get-endpoint` / `cd:get-endpoint` / `settings:get-endpoint` / `trip:get-endpoint` | invoke | `{ baseUrl }` for each service |
 | `entertainment:get-state` / `:set-volume` / `:set-source` | invoke | volume + active source |
 | `entertainment:state-changed` | main → renderer | volume/source broadcast to both windows |
 | `get-app-info` | invoke | name/version for the debug About panel |
@@ -171,11 +181,11 @@ React 18 + Electron 40 + Vite 7 + Tailwind v4 + shadcn/ui + framer-motion. TypeS
 | `main-process-message` | main → renderer | logged in `src/main.tsx` |
 | `debug-log`, `debug-channels`, `test-message` | renderer → main | wired in preload; not driven by main |
 
-`window.entertainmentAudio`, `window.jukebox`, `window.bluetooth`, `window.cd`, `window.settings`, `window.debugAPI`, `window.ipcRenderer` are the renderer-facing globals (`electron/preload.ts`). `window.debugAPI.getSystemInfo/getEnvVars` are computed **in preload**, not over IPC.
+`window.entertainmentAudio`, `window.jukebox`, `window.bluetooth`, `window.cd`, `window.settings`, `window.trip`, `window.debugAPI`, `window.ipcRenderer` are the renderer-facing globals (`electron/preload.ts`). `window.debugAPI.getSystemInfo/getEnvVars` are computed **in preload**, not over IPC.
 
 ### 5.2 vite.config.ts — the entry trap
 
-The frontend builds only two electron entries: `main` (→ `dist-electron/main.js`) and `preload` (→ `dist-electron/preload.mjs`, CJS). The four service bundles are built by the **services workspace** (`npm run build --workspace services` → `services/dist/<name>/index.js`, ESM).
+The frontend builds only two electron entries: `main` (→ `dist-electron/main.js`) and `preload` (→ `dist-electron/preload.mjs`, CJS). The five service bundles are built by the **services workspace** (`npm run build --workspace services` → `services/dist/<name>/index.js`, ESM).
 
 - `vite-plugin-electron` launches Electron from **whichever entry's `onstart` runs LAST**. Both entries route through the guarded `startOrReload` helper.
 - **Never make an entry's `onstart` a no-op** — the app may then never open.
@@ -192,9 +202,9 @@ The frontend builds only two electron entries: `main` (→ `dist-electron/main.j
 
 Bursts are debounced (300 ms). The root `npm run dev` starts the services in watch mode alongside the frontend. The watcher is pure and its behaviour is unit-tested (`frontend/test/dev-watch.test.ts`).
 
-### 5.3 The four local services
+### 5.3 The five local services
 
-All four are plain Node (`http` module, no framework) and **extend `BaseMediaService`**
+All five are plain Node (`http` module, no framework) and **extend `BaseMediaService`**
 (`services/shared/service-http.ts`), which owns the server, routing, SSE fan-out, graceful shutdown, process
 fault tolerance and the suspend/resume state machine. A service only implements `getState()`,
 `createRoutes()` and the `onStart` / `onStop` / `onSuspend` / `onResume` hooks.
@@ -209,6 +219,7 @@ the renderer reaches them through `window.<name>.getEndpoint()` + `src/services/
 | Bluetooth | `services/bluetooth-service/` | 4200 (`BLUETOOTH_PORT`) | BlueZ ≥ 5.79 `--experimental` + `obexd` | `dbus-next`; discovery + pairing agent + A2DP/AVRCP, audio is system-side |
 | CD | `services/cd-service/` | 4300 (`CD_PORT`) | **mpv** (`cdda://`, libcdio-paranoia); udisks2 for data discs | drive detection is udev-event driven |
 | Settings | `services/settings-service/` | 4400 (`SETTINGS_PORT`) | none | schema registry + JSON store only; owns no hardware, so it is always safe to suspend |
+| Trip | `services/trip-service/` | 4500 (`TRIP_PORT`) | none (SQLite via the **`node:sqlite` builtin**) | trip segmentation, fuel/cost, trajectory decimation; the only service with a persistent database. No CAN or GPS adapter exists yet — samples arrive through ports, and a dev-only simulator feeds them |
 
 **Identical endpoints on every service** (provided by the base class):
 
@@ -239,6 +250,20 @@ the renderer reaches them through `window.<name>.getEndpoint()` + `src/services/
 | `PATCH /api/values/:categoryId` | — | — | — | ✓ partial merge, returns the full normalised set |
 | `POST /api/values/:categoryId/reset` | — | — | — | ✓ back to schema defaults |
 
+**Trip-specific routes** (`services/trip-service/routes.ts`):
+
+| Path | Notes |
+| --- | --- |
+| `GET /api/periods` | Period presets with their resolved `from`/`to` and labels |
+| `GET /api/summary` | The four Trip Computer cards, each `{ value, unit, formatted, trend }` |
+| `GET /api/series` | Graph buckets at a granularity the service picks for the window |
+| `GET /api/trips`, `GET /api/trips/:id`, `GET /api/trips/:id/coordinates` | List, detail + stats, and the decimated map payload |
+| `POST /api/trips/merge` | Adjacent trips only — a non-adjacent pair is a 400 with the reason |
+| `POST /api/trips/:id/split` | That stage and later ones move to a new trip; both totals are recomputed |
+| `GET`/`POST /api/fuel/events`, `GET /api/fuel/prices` | Detected refuels, price confirmation, price history |
+| `GET /api/status` | Ingest liveness: last sample, counters, active trip/stage, simulation flag |
+| `POST /api/dev/simulation` | **dev only** (`TRIP_DEV`/`TRIP_DEV_SIMULATE`) — `start`/`stop`/`seed`; 404 otherwise |
+
 **The Settings service deliberately does not overload `/api/settings`.** That route is taken by the base
 class for process lifecycle; user-facing settings live under `/api/values/*`, which is what keeps the two
 concerns from colliding. Its `PATCH` auto-resumes a suspended service like any other mutating request.
@@ -254,6 +279,7 @@ writes an error body itself. Unknown route → 404, wrong method → 405, invali
 | Jukebox | snapshot `{albumId, trackIndex, positionSeconds, wasPlaying}`, kill mpv | relaunch mpv, reload album, `jump` + `seek`, and **stay paused** |
 | Bluetooth | stop the inquiry + AVRCP **pause** + stop the position tick; **BlueZ, the device list and the pairing agent stay live** (pairing and future calls) | restart the tick, AVRCP play if it was playing |
 | CD | snapshot `{discId, trackIndex, positionSeconds, wasPlaying}`, kill mpv | re-identify the physical disc: same id → reload + seek back; different or empty → reset and load what is there now |
+| Trip | stop ingestion (sources + dev simulator) only; the SQLite handle and the **open trip stay open** | restart ingestion; the same stage continues instead of a new trip starting |
 
 - Auto-suspend fires after `idleTimeoutMs` only when **no SSE client is attached and `isBusy()` is false**
   (playing audio blocks it).
@@ -279,15 +305,15 @@ placeholder and controls that are no-ops.
 ### 5.4 Renderer structure
 
 - **Provider stack** (`src/main.tsx`, inside `React.StrictMode`): `I18nProvider > BluetoothProvider > JukeboxProvider > CdProvider > SettingsProvider > App`.
-- **Views** (`src/App.tsx`): `home` → `HomeView`, `phone` → `PhoneView`, `media` → `MediaView`, `settings` → `SettingsView`. `NAV_ORDER` in `src/constants/navigation.ts` is the rotary/scroll order.
+- **Views** (`src/App.tsx`): `home` → `HomeView`, `phone` → `PhoneView`, `media` → `MediaView`, `settings` → `SettingsView`, `trip-computer` → `TripComputerView`, `trip-history` → `TripHistoryView`. `NAV_ORDER` in `src/constants/navigation.ts` is the rotary/scroll order and deliberately stays three items: `settings` and both trip apps are full-screen views opened from a Home tile (`fuel`, `nav-history`, `settings`).
 - **`#/debug`**: if `window.location.hash` starts with `#/debug`, `App` renders `DebugPanel` instead of the shell. The debug window uses this; the main window can too.
 - **Phone view** (`src/components/views/PhoneView.tsx` + `src/components/phone/`): two states switched on "is a phone connected". With none it renders the connect screen (hero render + `DeviceListCard`, driven by `useBluetooth().scan/phoneAction`); with one it renders `ConnectedPhoneScreen` (connection summary + placeholder cards for contacts/messages/calls). `primary` decides who is connected. `useScanWindow` starts the inquiry while the screen is up and stops it on unmount; the pairing prompt is `PairingModal`, shown whenever `state.pairing.stage === "awaiting-confirmation"`.
 - **Media view** (`src/components/media-view/MusicApp.tsx`): branches per `sourceFeed.selectedSourceId`. Jukebox has a two-mode flow (`library` CoverFlow ↔ `player` + queue drawer); `JukeboxProvider` keeps the selected mode in RAM across screen and source changes. The queue drawer remains local. Other sources render a single player.
 - **The player view needs an album.** `inPlayer` requires `state.albumId`, so a jukebox that lost its state falls back to the library instead of rendering an empty player (no track/album/artist). `useJukebox` also keeps a recovery memory (`src/lib/lastPlayback.ts`, pure + unit-tested): returning to the Jukebox source with nothing loaded reloads the last album/track **paused** (same rule as a snapshot restore: it never starts audio). An explicit `stop()` clears that memory — that is the only case where the album must *not* come back.
-- **Hooks** (`src/hooks/`): `useJukebox` / `useBluetooth` / `useCd` / `useSettings` (service-or-mock state), `useNowPlaying` (home hub), `useMediaSourceAdapters`, `useEntertainmentVolume`, `useRotaryNavigation`, `useCoverFlowNavigation`, `useSettingsNavigation`.
+- **Hooks** (`src/hooks/`): `useJukebox` / `useBluetooth` / `useCd` / `useSettings` / `useTripComputer` / `useTripHistory` (service-or-mock state), `useNowPlaying` (home hub), `useMediaSourceAdapters`, `useEntertainmentVolume`, `useRotaryNavigation`, `useCoverFlowNavigation`, `useSettingsNavigation`.
 - **Bluetooth state is device-centric.** `state.devices` is the phone list and `state.media` is the *active* phone's media — the media view reads `state.media`, not a flat top-level player. See `docs/bluetooth.md`.
-- **Transport layer** (`src/services/{jukebox,bluetooth,cd,settings,health}.ts`): thin `fetch` + `EventSource` wrappers; endpoint resolution falls back to the hard-coded default URL when the preload bridge is absent (`VITE_BLUETOOTH_BASE_URL` overrides it for browser dev).
-- **Mock fallback:** each data hook probes `/api/health`; when the service is unreachable it switches to `src/data/*.mock.ts` (`mode: "service" | "mock" | "loading"`). Bluetooth/CD/settings re-probe every 5 s; jukebox decides once on mount. This is what keeps a plain browser (`npm run dev`, no Electron) usable.
+- **Transport layer** (`src/services/{jukebox,bluetooth,cd,settings,trip,health}.ts`): thin `fetch` + `EventSource` wrappers; endpoint resolution falls back to the hard-coded default URL when the preload bridge is absent (`VITE_BLUETOOTH_BASE_URL` overrides it for browser dev).
+- **Mock fallback:** each data hook probes `/api/health`; when the service is unreachable it switches to `src/data/*.mock.ts` (`mode: "service" | "mock" | "loading"`). Bluetooth/CD/settings/trip re-probe every 5 s; jukebox decides once on mount. This is what keeps a plain browser (`npm run dev`, no Electron) usable.
 
 ### 5.4.1 Settings app (the adaptive-layout deep module)
 
@@ -303,7 +329,7 @@ Two rules make "add a setting" a backend-only change; break either and the modul
    another category, which is how cross-category coupling is stopped mechanically rather than by review.
 
 - **One header, not per-category.** The left column prints the section title (`settings.title`) and then
-  the five categories as **plain text lines** — no icons, no pill, no container. The selected line is the
+  the categories as **plain text lines** — no icons, no pill, no container. The selected line is the
   only amber item. The center column prints **no heading at all**, so switching category never swaps a
   title. `CategoryDef.icon`/`titleKey` still travel in the schema but are not rendered; a test pins the
   rail entry's exact key set so an icon cannot creep back in.
@@ -365,6 +391,15 @@ Native `node:test` — no jest/vitest, no new dependency. The script is
 | `services/test/settings-fixture.ts` / `settings-support.ts` | the tests-only `test-fixture` category and the `apiPatch` + start/stop harness — never imported by production code |
 | `services/test/jukebox-harness.ts` | shared jukebox fixture (`withJukeboxService`, `makeLibrary`) used by the service suite and the frontend entertainment-volume suite |
 | `frontend/test/entertainment-volume.test.ts` | the Electron `EntertainmentVolumeController` driving a real jukebox service through source switches, suspend and resume |
+| `services/test/trip-arithmetic.test.ts` | litres from a tank or a flow, odometer resets, cost attribution, `--` rendering |
+| `services/test/trip-buckets.test.ts` | window/preset resolution, the comparison window being adjacent and equal, bucket boundaries, trend comparability |
+| `services/test/trip-trajectory.test.ts` | decimation (including a parked car with a live receiver), RDP, bounds, projection degeneracies |
+| `services/test/trip-engine.test.ts` | the segmentation state machine: idling, short stops, 4 h away → two legs, 4 h at home → two trips, > 18 h, odometer resets, refuel detection, power-loss recovery, no GPS |
+| `services/test/trip-store.test.ts` | `node:sqlite` migrations, cascade deletes, atomic recompute, parity after merge/split, restart persistence |
+| `services/test/trip-service.test.ts` | every trip route over HTTP, validation, merge/split refusals, refuel pricing, suspend/resume, dev-endpoint gating |
+| `services/test/settings-trip-category.test.ts` | pins the `trip` settings **field ids**, which the trip service reads by name over HTTP |
+| `frontend/test/trip-view.test.ts` | the renderer's own logic: wording a delta, arrow decisions, date/duration formatting |
+| `frontend/test/trip-service-integration.test.ts` | the renderer's real client against a real trip service: cards, graph, road-trip legs, map payload, merge/split |
 
 Services take injected collaborators, so no hardware is needed: `createMpv`, `drive`, `identifyDisc`,
 `settings`, `installProcessHandlers: false`, `logger: createSilentLogger()`. Tests bind port `0`
@@ -388,6 +423,12 @@ Services take injected collaborators, so no hardware is needed: `createMpv`, `dr
 | `CD_MPV_BINARY` | `which mpv` → `/usr/bin/mpv` | CD playback |
 | `SETTINGS_PORT` | `4400` | `electron/main.ts`, `services/settings-service/config.ts` |
 | `SETTINGS_STORE_PATH` | `~/.config/renault-mmi/settings.json` | settings persistence (tests always pass a temp path) |
+| `TRIP_PORT` | `4500` | `electron/main.ts`, `services/trip-service/config.ts` |
+| `TRIP_DB_PATH` | `~/.config/renault-mmi/trips.db` | trip database (SQLite, WAL) |
+| `TRIP_DEV` | unset | trip service: `1` mounts `POST /api/dev/simulation` |
+| `TRIP_DEV_SIMULATE` | unset | trip service: `1` attaches the drive simulator as well |
+| `SETTINGS_BASE_URL` | unset | trip service: where to read preferences; unset runs on defaults + its cached snapshot |
+| `TRIP_DEFAULT_FUEL_PRICE` | `1.85` | trip service: price the dev seed uses on the refuels it generates |
 | `SERVICE_AUTO_SUSPEND` | `1` (on) | every service: `0` disables idle auto-suspend |
 | `SERVICE_IDLE_TIMEOUT_MS` | `60000` | every service: idle window before auto-suspend (`0` = never) |
 | `VITE_DEV_SERVER_URL` | unset in build | set by vite-plugin-electron in dev |
@@ -405,7 +446,7 @@ Services take injected collaborators, so no hardware is needed: `createMpv`, `dr
 - **Never track SSE clients with `req.on("close")`.** In modern Node that fires as soon as the *request*
   stream is drained (immediately, for a bodyless GET). The SSE hub listens on the **response** `close`
   instead; changing it back silently drops every subscriber.
-- **`services/shared/service-http.ts` is load-bearing for all four services.** Route handlers `throw` instead of
+- **`services/shared/service-http.ts` is load-bearing for all five services.** Route handlers `throw` instead of
   writing responses; changing `dispatch` changes every endpoint contract at once. `services/test/base-media-service.test.ts`
   is the safety net. Its `CORS_HEADERS` allow-list must keep including `PATCH`: it is not a CORS-simple
   method, so in `npm run dev` (renderer on Vite `:5173`, service on `:4xxx`) every settings write is
@@ -425,6 +466,14 @@ Services take injected collaborators, so no hardware is needed: `createMpv`, `dr
 - **`electron` is resolved explicitly in `frontend/vite.config.ts`.** npm workspaces hoist `vite-plugin-electron` to the repo root while `electron` stays in `frontend/node_modules`, so the plugin's own `startup()` fails with `ERR_MODULE_NOT_FOUND`. `startOrReload` resolves the package with `createRequire(<frontend>/package.json)` and hands the absolute entry to `startup()`; keep it that way instead of calling the plugin's bare `reload()` on first launch.
 - **`x11` is aliased in the services build.** `dbus-next` does an unconditional `require('x11')` for the *session* bus path; the package is not installed and a bundler hoists it to a top-level ESM import, so the bluetooth service dies at load with `Cannot find package 'x11'`. `services/scripts/build.mjs` aliases it to `services/scripts/x11-stub.mjs` (default `null`), which restores dbus-next's intended fallback. Removing the alias re-breaks bluetooth startup.
 - **A service is not wired by `frontend/vite.config.ts`.** Adding/renaming one means editing `services/scripts/build.mjs`, `frontend/electron/main.ts` (`SERVICES_DIST` child paths + dev-watch target), `preload.ts` and `src/services/*`.
+- **The trip service has no telemetry adapter, on purpose.** `VehiclePayloadState` carries **no odometer, no fuel level and no flow rate** — only speed, RPM, gear, brake, climate, light, door and seatbelt flags. The trip domain is therefore written against an assumed odometer behind `TelemetrySource`, and a **dev-only** simulator is the only implementation. Do not "fix" this by reading the UDP frames: there is nothing in them to read. The same applies to GPS — `LocationSource` has no implementation, while the trajectory pipeline that consumes it is complete and tested.
+- **The trip database directory is created by `TripStore`, not by `node:sqlite`.** `node:sqlite` creates the *file* but not the directory holding it, and the default location is `~/.config/renault-mmi/trips.db`. Without the explicit `mkdirSync` the service dies at boot with `unable to open database file` — and because Electron spawns services with `stdio: 'ignore'`, it dies **silently**: the four other services come up and only `:4500` is missing. Keep the `mkdirSync` in the `TripStore` constructor.
+- **Services are spawned through `spawnService`, which waits out a dev build.** `app.whenReady()` runs while the services watch is still writing bundles, so an entry can be missing (or briefly absent while its output directory is emptied and rewritten). A child spawned against a missing `index.js` exits at once, and with `stdio: 'ignore'` nothing is printed — the only symptom is that one port never opens. Do not replace `spawnService` with a bare `spawn`.
+- **`isDev` in `electron/main.ts` is declared with the other constants, above `startTripService`.** A `const` read from a function that runs during `app.whenReady()` is in its temporal dead zone if it is declared further down the file, so the spawn throws and is skipped — again silently.
+- **`node:sqlite`, not `better-sqlite3`.** It is a Node builtin and was verified working in both the system Node and the Node Electron exposes to spawned children (`ELECTRON_RUN_AS_NODE=1`). A native module here would need externalising in `build.mjs` and shipping prebuilt per target. `services/test/trip-service.test.ts` and `trip-store.test.ts` are the safety net.
+- **Trip money is derived at read time, never stored per trip.** A litre costs whatever price was in force when it burned, so a corrected price re-costs history. Storing a per-trip cost would leave stale totals behind after a price correction, which is why there is no `fuel_cost` column on `trip_stages`.
+- **A trip only ends on the next ignition.** A car parked for the night keeps an open trip until it drives again (appending a leg) or the service restarts and boot recovery closes it. Do not "simplify" this by finalizing on the dwell timeout — that is exactly what turns a road trip into two trips.
+- **`EventSource` is not a global in the service runtime.** Not in Node, and not in the Node Electron runs for spawned children. The trip service polls the settings service instead; do not reach for a stream there without checking `typeof EventSource` first.
 - **Custom opencode agents** live in `.opencode/agents/`: `infotainment-ux-architect` (UI components), `react-architect` (refactors), `electron-react-auditor` (review), `test-suite-architect` (tests, see §5.7).
 
 ---
@@ -434,6 +483,10 @@ Services take injected collaborators, so no hardware is needed: `createMpv`, `dr
 | Change | Touch these |
 | --- | --- |
 | Add/modify a UI screen | `src/components/views/*` + `src/App.tsx` switch + `NAV_ORDER` |
+| Add a full-screen app reachable from a Home tile | a `NavId` in `src/types/navigation.ts`, a target in the `targets` map in `src/App.tsx`, and the view component — leave `NAV_ORDER` alone |
+| Change trip segmentation / fuel / cost | `services/trip-service/trip/*.ts` (pure) + `engine.ts` for the state machine; keep the arithmetic out of `routes.ts` |
+| Add a trip metric or graph series | `services/trip-service/query.ts` + `types.ts`, then render it — the renderer must not aggregate |
+| Change how a drive is simulated | `services/trip-service/telemetry/simulator.ts` (deterministic; no `Math.random`, no wall clock inside the generator) |
 | Add a media source | `src/data/media.ts` → `SOURCE_ADAPTER_FACTORIES` (§5.5); a service module if it needs a backend |
 | Add a service | new `services/*-service/` class extending `BaseMediaService` + `createRoutes()` + entry in `services/scripts/build.mjs` + spawn/stop and dev-watch in `frontend/electron/main.ts` + preload global + `src/services/*` |
 | Add an endpoint | a handler in that service's `createRoutes()`; `throw new HttpError(...)` for errors, `sendJson(res, …)` for success |
@@ -456,5 +509,7 @@ Services take injected collaborators, so no hardware is needed: `createMpv`, `dr
 | `docs/can-decoder.md` | CAN decoder pipeline and threading detail |
 | `docs/music.md` | media view design (**stale** on source status) |
 | `docs/bluetooth.md` | bluetooth state model, pairing flow, AVRCP/BIP cover art, BlueZ setup |
+| `.dsh/specs/trip-service/spec.md` | trip backend: ports, segmentation, costing, windows, API, schema, env |
+| `.dsh/specs/trip-computer/spec.md` / `.dsh/specs/trip-history/spec.md` | the two trip apps |
 
 When you change architecture, ports, env vars, or an invariant above, update this file in the same change.

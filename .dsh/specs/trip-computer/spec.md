@@ -1,31 +1,96 @@
-# Trip computer
-The following app is a glorified trip computer. This spec explain what it should do.
+# Trip Computer
 
-## Frontend
+The "how much have I spent, and am I improving" app. Four numbers, four trends and a graph over
+a period the user picks.
 
-- Users is allowed to select a time period in order to see consumption data, more particular:
-    - they can see how much money they spent on gas during that period
-    - how many liters they have consumed
-    - their avg. consumption (expressed in km/l or l/100, selectable from the system settings)
-    - how much km did they in that period
+Reference layout: `./Trip Computer.png`.
 
-Every of this data will be in a card and there should also be a system that calculates a "trend". If in a period (for example of two weeks) the user has travelled more, then it will appear on the card an arrow up (this is the asset: ) with a text on the bottom of the card that says like "+2l than last period". Finally, there must be a graph that show all this data. If there's no data, well the frontend should output no data (-- in cards, for example).
+## 1. Where it lives
 
-Here's the photo of the design I did: @./Trip Computer.png
+Opened from the **Fuel** tile on the Home grid (`DEFAULT_APPS` → `fuel`) as a full-screen view,
+the same mechanism Settings uses. It is deliberately **not** in `NAV_ORDER`: the bottom rail
+stays three items. See `frontend/src/App.tsx`.
 
-## Backend
+## 2. The four cards
 
-- Log the data from the vehicle UDP packets that arrives for the consumpion.
-- Stores this data in the most simple database which has to be fast and put near-zero overhead to the system. (For dev purpose, we have to containerize it; on the production system, we have it exposed without any container that add overhead).
-- Build the most fastest and light weight backend that can calculate this data from the DB and send them to the frontend Trip Computer app. Build it in TS.
-- Since it's a trip computer, the settings must be in the Vehicle section of the Settings app. You must add settings for this app there.
-- The backend should understand if the fuel level of the car changed significantly, for example it grew for more then 2 liters and ask the user on the startup via a global notification (that should live in the entirety app) at what price per liter it did the fueling. Spec this feature into another spec so another subagent can implement it. A global notification service that can be used by every app through the whole system.  
+| Card | Value | Unit |
+| --- | --- | --- |
+| Spent so far | total cost of the fuel burned | currency symbol |
+| Avg. consumption | average over the period, in the unit from **Settings → Trips** | `l/100km` or `km/l` |
+| Liter consumed | total litres | `l` |
+| Total distance | total kilometres | `km` |
 
-Warning: this backend should be implemented together with @../trip-history, read also that spec to understand how it should implemented. This backend should manage both apps. 
+Each card carries a **trend**: an arrow and a one-line comparison, e.g. `+2.00 l vs last
+period`. The comparison is against the **immediately preceding period of the same length** —
+"last 30 days" compares with the 30 days before that, not with "last month".
 
-## Tests
+Every value, unit, formatted string and trend direction arrives from the service. The renderer
+**performs no calculation**: it does not aggregate, convert units, round, or decide what a
+period means. That is the invariant the whole feature is built on, and it is why a card can
+never disagree with the graph beside it.
 
-The frontend app in the Electron should only render data and should not do any calculation. That's what the backend should do. Because we won't have any real data, just create a mock that works only in dev mode. I will have to do tests in the future to see if the data from the car is readable, so put a switch in the app somewhere visible only in dev mode to deactivate the mock data.
+## 3. No data
 
-You have to test the trip computer calculus in different periods to see if the data are coherent.
+- A period with no trips shows **`--`** in every card and **no arrow**.
+- A period that *has* data but whose comparison period does not shows a value **without an
+  arrow**, with "No previous period" beneath it. A `+0` would read as a real "unchanged"
+  month, so it is never shown.
+- The graph draws an explicit empty state rather than a flat line at zero.
 
+## 4. The graph
+
+Distance bars with consumption overlaid, in the project's amber palette, drawn as inline SVG
+with no charting dependency.
+
+Buckets come from the service at a granularity it picks for the window (hourly for a day or
+two, daily up to ~2 months, weekly beyond). **Empty buckets are included**, so a gap where the
+car sat still is visible as a gap rather than smoothed over by a line connecting two distant
+points.
+
+## 5. Period selection
+
+The pill in the header shows the **resolved range** (`01/09/2026 - 30/09/2026`) exactly as the
+service reported it, followed by the presets: Today, Last 7 days, Last 30 days, Last 90 days,
+Last 12 months, All time.
+
+The range text is printed from the service's own `from`/`to` — the renderer never derives a
+date, because a renderer that computes dates is a renderer that can disagree with the window
+the numbers came from.
+
+## 6. Layout
+
+At the 1920×480 stage, following the reference:
+
+- Header row: the app title, then the period selector.
+- Left: a 2×2 grid of cards — Spent / Avg. consumption on the first row, Litres / Distance on
+  the second.
+- Right: the graph, filling the remaining width.
+
+## 7. Files
+
+| Path | Role |
+| --- | --- |
+| `src/components/views/trip-computer/TripComputerView.tsx` | Composition and layout |
+| `…/MetricCard.tsx` | One card: label, value, arrow, comparison line |
+| `…/TrendArrow.tsx` | The inline triangle; `neutral` draws nothing |
+| `…/PeriodSelector.tsx` | The resolved range plus the preset buttons |
+| `…/ConsumptionChart.tsx` | The SVG graph and its empty state |
+| `src/hooks/useTripComputer.ts` | Endpoint, health poll, mock fallback, refetch on a new trip |
+| `src/services/trip.ts` | Thin fetch wrappers |
+| `src/data/trip.mock.ts` | Browser-dev fallback so `npm run dev` renders without Electron |
+| `src/lib/trip-view.ts` | The renderer's only logic: wording a delta, formatting a date |
+
+## 8. Tests
+
+- `frontend/test/trip-view.test.ts` — delta wording (including money and the "not comparable"
+  case), arrow decisions, date and duration formatting.
+- `frontend/test/trip-service-integration.test.ts` — drives a real service through the
+  renderer's own client and asserts on what a card would show, including the `--` cases and
+  the "no previous period" rule.
+
+## 9. What this app must not do
+
+- Do not add aggregation, unit conversion or bucketing to the renderer. If a card needs a new
+  number, compute it in the service.
+- Do not print a trend when `trend.comparable` is false.
+- Do not derive a period label from a preset name; use the range the service resolved.

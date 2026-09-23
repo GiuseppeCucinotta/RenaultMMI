@@ -1,5 +1,5 @@
 /**
- * Builds the four service bundles into `services/dist/<name>/index.js`.
+ * Builds the service bundles into `services/dist/<name>/index.js`.
  *
  * Uses vite-plugin-electron's programmatic `build()` so the services get the
  * exact same Node bundling rules as the Electron main process (node builtins
@@ -29,6 +29,7 @@ const services = [
   { name: "bluetooth", entry: "bluetooth-service/index.ts" },
   { name: "cd", entry: "cd-service/index.ts" },
   { name: "settings", entry: "settings-service/index.ts" },
+  { name: "trip", entry: "trip-service/index.ts" },
 ];
 
 for (const { name, entry } of services) {

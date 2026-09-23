@@ -22,6 +22,7 @@
     "bluetooth-service",
     "cd-service",
     "settings-service",
+    "trip-service",
     "test"
   ]
 }

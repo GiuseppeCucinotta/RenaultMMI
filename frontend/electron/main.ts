@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createUdpProbe } from './udp-probe'
@@ -28,6 +29,7 @@ let jukeboxService: ChildProcess | null = null
 let bluetoothService: ChildProcess | null = null
 let cdService: ChildProcess | null = null
 let settingsService: ChildProcess | null = null
+let tripService: ChildProcess | null = null
 
 const udpProbe = createUdpProbe()
 
@@ -38,6 +40,15 @@ const CD_PORT = process.env.CD_PORT ?? '4300'
 const CD_DEVICE = process.env.CD_DEVICE
 const SETTINGS_PORT = process.env.SETTINGS_PORT ?? '4400'
 const SETTINGS_STORE_PATH = process.env.SETTINGS_STORE_PATH
+const TRIP_PORT = process.env.TRIP_PORT ?? '4500'
+const TRIP_DB_PATH = process.env.TRIP_DB_PATH
+/**
+ * Development mode. Declared here, with the other constants, because
+ * `startTripService` reads it — a `const` referenced from a function that runs
+ * during `app.whenReady()` is still in its temporal dead zone if it is declared
+ * further down the file, and the throw silently skips the spawn.
+ */
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 const entertainment = new EntertainmentVolumeController({
   jukeboxPort: Number(JUKEBOX_PORT),
@@ -136,6 +147,10 @@ ipcMain.handle('settings:get-endpoint', () => ({
   baseUrl: `http://127.0.0.1:${SETTINGS_PORT}`,
 }))
 
+ipcMain.handle('trip:get-endpoint', () => ({
+  baseUrl: `http://127.0.0.1:${TRIP_PORT}`,
+}))
+
 ipcMain.on('debug-media-feed', (_event, feed: unknown) => {
   win?.webContents.send('debug-media-feed', feed)
 })
@@ -157,17 +172,8 @@ function startJukeboxService() {
     env.JUKEBOX_MUSIC_ROOT = JUKEBOX_MUSIC_ROOT
   }
 
-  jukeboxService = spawn(process.execPath, [entry], {
-    env,
-    stdio: 'ignore',
-  })
-
-  jukeboxService.on('error', (error) => {
-    console.error('[jukebox] failed to spawn service:', error.message)
-    jukeboxService = null
-  })
-  jukeboxService.on('exit', () => {
-    jukeboxService = null
+  spawnService('jukebox', entry, env, (child) => {
+    jukeboxService = child
   })
 }
 
@@ -188,17 +194,8 @@ function startBluetoothService() {
     BLUETOOTH_PORT,
   }
 
-  bluetoothService = spawn(process.execPath, [entry], {
-    env,
-    stdio: 'ignore',
-  })
-
-  bluetoothService.on('error', (error) => {
-    console.error('[bluetooth] failed to spawn service:', error.message)
-    bluetoothService = null
-  })
-  bluetoothService.on('exit', () => {
-    bluetoothService = null
+  spawnService('bluetooth', entry, env, (child) => {
+    bluetoothService = child
   })
 }
 
@@ -222,17 +219,8 @@ function startCdService() {
     env.CD_DEVICE = CD_DEVICE
   }
 
-  cdService = spawn(process.execPath, [entry], {
-    env,
-    stdio: 'ignore',
-  })
-
-  cdService.on('error', (error) => {
-    console.error('[cd] failed to spawn service:', error.message)
-    cdService = null
-  })
-  cdService.on('exit', () => {
-    cdService = null
+  spawnService('cd', entry, env, (child) => {
+    cdService = child
   })
 }
 
@@ -256,17 +244,8 @@ function startSettingsService() {
     env.SETTINGS_STORE_PATH = SETTINGS_STORE_PATH
   }
 
-  settingsService = spawn(process.execPath, [entry], {
-    env,
-    stdio: 'ignore',
-  })
-
-  settingsService.on('error', (error) => {
-    console.error('[settings] failed to spawn service:', error.message)
-    settingsService = null
-  })
-  settingsService.on('exit', () => {
-    settingsService = null
+  spawnService('settings', entry, env, (child) => {
+    settingsService = child
   })
 }
 
@@ -277,7 +256,129 @@ function stopSettingsService() {
   settingsService = null
 }
 
+/**
+ * The trip service owns the only persistent database in the app, and it reads
+ * the shared preferences over HTTP like any other client. `SETTINGS_BASE_URL` is
+ * what lets it do that without importing settings code, and `TRIP_DEV_SIMULATE`
+ * is the only switch that makes it fabricate telemetry — it is never set in a
+ * packaged build.
+ */
+function startTripService() {
+  if (tripService && !tripService.killed) return
+
+  const entry = path.join(SERVICES_DIST, 'trip', 'index.js')
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    TRIP_PORT,
+    SETTINGS_BASE_URL: `http://127.0.0.1:${SETTINGS_PORT}`,
+  }
+  // Derived from Electron's own userData rather than left to the service's
+  // `~/.config/renault-mmi` default: an appliance can be running from a
+  // read-only or relocated home, and a service that cannot open its database
+  // does not start at all. An explicit `TRIP_DB_PATH` still wins.
+  env.TRIP_DB_PATH = TRIP_DB_PATH || path.join(app.getPath('userData'), 'trips.db')
+  // Dev convenience: without a vehicle there is no odometer signal yet, so the
+  // simulator is the only way to see either app with real data. It also keeps
+  // the service busy, which is correct — a drive that is happening must be
+  // recorded whether or not anyone is looking at the screen.
+  if (isDev && process.env.TRIP_DEV_SIMULATE === undefined) {
+    env.TRIP_DEV_SIMULATE = '1'
+  }
+
+  spawnService('trip', entry, env, (child) => {
+    tripService = child
+  })
+}
+
+function stopTripService() {
+  if (tripService && !tripService.killed) {
+    tripService.kill()
+  }
+  tripService = null
+}
+
 /** A dev rebuild must not race the old child for the port: wait for its exit. */
+/**
+ * Spawns a service child, waiting out a dev build that is still in flight.
+ *
+ * On a dev start the main process reaches `app.whenReady()` while the services
+ * watch is still writing bundles, so an entry can be missing (or briefly absent
+ * while its output directory is emptied and rewritten). Spawning then exits at
+ * once — and because services run with `stdio: 'ignore'` the error is invisible:
+ * the symptom is only "one port never opens".
+ *
+ * So a child that dies early is retried until the entry exists. The retry is
+ * bounded by a deadline and does not hide a genuine crash: a service that is
+ * present and broken still gives up and says so.
+ */
+const SERVICE_SPAWN_RETRY_MS = 500
+const SERVICE_SPAWN_WAIT_MS = 30_000
+
+function spawnService(
+  name: string,
+  entry: string,
+  env: NodeJS.ProcessEnv,
+  onChild: (child: ChildProcess | null) => void,
+  waitUntil = Date.now() + SERVICE_SPAWN_WAIT_MS,
+): void {
+  if (quitting) {
+    onChild(null)
+    return
+  }
+
+  if (!existsSync(entry)) {
+    if (Date.now() >= waitUntil) {
+      console.error(`[${name}] bundle ${entry} never appeared; giving up`)
+      onChild(null)
+      return
+    }
+    setTimeout(() => spawnService(name, entry, env, onChild, waitUntil), SERVICE_SPAWN_RETRY_MS).unref()
+    return
+  }
+
+  // stderr is captured, not ignored: a service that dies at startup is exactly
+  // the case where the reason matters, and `stdio: 'ignore'` would swallow it.
+  const child = spawn(process.execPath, [entry], { env, stdio: ['ignore', 'ignore', 'pipe'] })
+  let startupErrors = ''
+  child.stderr?.on('data', (chunk: Buffer) => {
+    startupErrors = (startupErrors + chunk.toString()).slice(-2000)
+  })
+  onChild(child)
+
+  // A child that survives this long was not a missing-bundle failure.
+  let alive = false
+  const settle = setTimeout(() => {
+    alive = true
+  }, SERVICE_SPAWN_RETRY_MS)
+  settle.unref()
+
+  child.on('error', (error) => {
+    console.error(`[${name}] failed to spawn service:`, error.message)
+    onChild(null)
+  })
+
+  child.on('exit', () => {
+    if (alive) {
+      onChild(null)
+      return
+    }
+    clearTimeout(settle)
+    if (startupErrors.trim().length > 0) {
+      console.error(`[${name}] service failed at startup:\n${startupErrors.trim()}`)
+    }
+    if (Date.now() >= waitUntil) {
+      console.error(`[${name}] service exited immediately and will not be retried`)
+      onChild(null)
+      return
+    }
+    setTimeout(() => spawnService(name, entry, env, onChild, waitUntil), SERVICE_SPAWN_RETRY_MS).unref()
+  })
+}
+
+/** Set on `will-quit`, so a retry cannot resurrect a service during shutdown. */
+let quitting = false
+
 function restartService(name: string, child: ChildProcess | null, start: () => void) {
   console.log(`[dev] ${name} changed — restarting the service`)
   if (!child || child.killed) {
@@ -328,6 +429,7 @@ function watchDevBundles() {
       serviceTarget('bluetooth', () => bluetoothService, startBluetoothService),
       serviceTarget('cd', () => cdService, startCdService),
       serviceTarget('settings', () => settingsService, startSettingsService),
+      serviceTarget('trip', () => tripService, startTripService),
     ],
     {
       onError: (name, error) =>
@@ -335,8 +437,6 @@ function watchDevBundles() {
     },
   )
 }
-
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -429,15 +529,19 @@ app.whenReady().then(() => {
   startBluetoothService()
   startCdService()
   startSettingsService()
+  startTripService()
   watchDevBundles()
   createWindow()
 })
 
 app.on('will-quit', () => {
+  // Stops a spawn retry from resurrecting a service during shutdown.
+  quitting = true
   stopJukeboxService()
   stopBluetoothService()
   stopCdService()
   stopSettingsService()
+  stopTripService()
 })
 
 export { createDebugWindow, toggleDebugWindow }
