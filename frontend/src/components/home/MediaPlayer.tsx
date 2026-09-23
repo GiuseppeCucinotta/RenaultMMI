@@ -30,14 +30,14 @@ export function MediaPlayer({
   const marqueeDuration = `${Math.max(4, displayName.length * 0.45)}s`;
 
   return (
-    <div className="flex-[0_0_25%] h-full min-w-62.5 overflow-hidden">
+    <div className="flex h-full w-full min-w-62.5 flex-[0_0_25%] overflow-hidden">
       <motion.div
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 26 }}
-        className="h-full overflow-hidden"
+        className="h-full w-full min-w-0 overflow-hidden"
       >
-        <Card className="relative h-full rounded-[20px] overflow-hidden border-0 bg-black/20">
+        <Card className="relative h-full w-full min-w-0 rounded-[20px] overflow-hidden border-0 bg-black/20">
           {/* Album art background */}
           <motion.div
             className="absolute inset-0 z-0"
@@ -65,7 +65,7 @@ export function MediaPlayer({
             <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/25 to-transparent" />
           </div>
 
-          <CardContent className="relative z-2 flex flex-col justify-end h-full px-5 py-5 min-w-0">
+          <CardContent className="relative z-2 flex h-full w-full min-w-0 flex-col justify-end px-5 py-5">
             {/* Spacer — pushes content to bottom area */}
             <div className="flex-1" />
 
@@ -74,12 +74,12 @@ export function MediaPlayer({
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.12 }}
-              className="flex items-center justify-between gap-3 min-w-0"
+              className="flex w-full min-w-0 items-center justify-between gap-3"
             >
               {shouldScroll ? (
-                <div className="relative flex-1 min-w-0 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+                <div className="relative w-0 min-w-0 flex-1 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
                   <div
-                    className="flex w-max animate-marquee whitespace-nowrap"
+                    className="flex w-max max-w-none animate-marquee whitespace-nowrap"
                     style={{ animationDuration: marqueeDuration }}
                   >
                     <span className="pr-10 text-5xl font-bold text-warm-500 leading-none tracking-tight">
@@ -125,7 +125,7 @@ export function MediaPlayer({
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.24 }}
-              className="mt-2 truncate text-sm font-medium text-warm-100"
+              className="mt-2 w-full min-w-0 truncate text-sm font-medium text-warm-100"
             >
               {displaySource}
             </motion.p>

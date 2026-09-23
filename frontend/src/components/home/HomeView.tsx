@@ -34,7 +34,7 @@ export function HomeView({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: reduceMotion ? 0 : 0.3, ease: "easeOut" }}
-      className="flex w-full h-full gap-4 min-w-0 overflow-hidden"
+      className="flex h-full min-h-0 w-full min-w-0 gap-4 overflow-hidden"
     >
       <MediaPlayer
         isPlaying={isPlaying}
